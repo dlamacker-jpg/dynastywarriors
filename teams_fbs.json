@@ -1,6 +1,6 @@
 {
   "_comment": "FBS teams grouped by conference. Edit freely to match your league's pool — delete teams/conferences you don't use. The bot lists everything here that isn't claimed as 'Teams Available'. Matching is by normalized name, so coaches should nickname themselves with the school name shown here (e.g. 'Ole Miss', 'Miami', 'Texas A&M').",
-  "SEC": ["Alabama", "Arkansas", "Auburn", "Florida", "Georgia", "Kentucky", "LSU", "Mississippi State", "Missouri", "Oklahoma", "Ole Miss", "South Carolina", "Tennessee", "Texas", "Texas A&M", "Vanderbilt"],
+  "SEC": ["Alabama", "Arkansas", "Auburn", "Florida", "Georgia", "Kentucky", "LSU", "Mississippi State", "Missouri", "Notre Dame", "Oklahoma", "Ole Miss", "South Carolina", "Tennessee", "Texas", "Texas A&M", "Vanderbilt"],
   "Big Ten": ["Illinois", "Indiana", "Iowa", "Maryland", "Michigan", "Michigan State", "Minnesota", "Nebraska", "Northwestern", "Ohio State", "Oregon", "Penn State", "Purdue", "Rutgers", "UCLA", "USC", "Washington", "Wisconsin"],
   "Big 12": ["Arizona", "Arizona State", "Baylor", "BYU", "Cincinnati", "Colorado", "Houston", "Iowa State", "Kansas", "Kansas State", "Oklahoma State", "TCU", "Texas Tech", "UCF", "Utah", "West Virginia"],
   "ACC": ["Boston College", "California", "Clemson", "Duke", "Florida State", "Georgia Tech", "Louisville", "Miami", "NC State", "North Carolina", "Pittsburgh", "SMU", "Stanford", "Syracuse", "Virginia", "Virginia Tech", "Wake Forest"],
@@ -10,5 +10,5 @@
   "Conference USA": ["Delaware", "Jacksonville State", "Kennesaw State", "Liberty", "Louisiana Tech", "Middle Tennessee", "Missouri State", "New Mexico State", "Sam Houston", "UTEP", "Western Kentucky"],
   "MAC": ["Akron", "Ball State", "Bowling Green", "Buffalo", "Central Michigan", "Eastern Michigan", "Kent State", "Massachusetts", "Miami (OH)", "Northern Illinois", "Ohio", "Toledo", "Western Michigan"],
   "Sun Belt": ["Appalachian State", "Arkansas State", "Coastal Carolina", "Georgia Southern", "Georgia State", "James Madison", "Louisiana", "Marshall", "Old Dominion", "South Alabama", "Southern Miss", "Texas State", "Troy", "ULM"],
-  "Independents": ["Notre Dame", "UConn"]
+  "Independents": ["UConn"]
 }

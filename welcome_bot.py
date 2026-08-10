@@ -159,6 +159,7 @@ def main() -> None:
     reserved = load_reserved()
     ALIASES.update(load_aliases())  # merge file aliases over the built-in defaults
     team_by_norm = {base_norm(t): t for teams in conferences.values() for t in teams}
+    team_conf = {base_norm(t): conf for conf, teams in conferences.items() for t in teams}
 
     # For the substring fallback: map every team-norm and alias key to its team-norm,
     # keeping only keys >= 5 chars (shorter ones like "usc"/"cal" would false-match inside
@@ -247,27 +248,33 @@ def main() -> None:
     def build_taken_blocks(guild: discord.Guild) -> list[str]:
         taken, conflicts, unset, _ = gather_teams(guild)
 
-        lines = [
-            "# 🏈 Teams Taken — Dynasty Warriors",
+        items = [
+            "# 🏈 Teams Taken — Dynasty Warriors\n"
             "*Auto-updates as coaches set their nickname to their school (rule #9). "
-            "Open schools are in #teams-available.*",
-            "",
-            f"**Taken ({len(taken) + len(conflicts)}):**",
+            "Open schools are in #teams-available.*\n\n"
+            f"**Taken ({len(taken) + len(conflicts)}):**"
         ]
         if taken:
-            lines += [f"• **{team}** — {owner}" for team, owner in taken]
+            by_conf: dict[str, list[tuple[str, str]]] = {}
+            for team, owner in taken:
+                by_conf.setdefault(team_conf.get(base_norm(team), "Other"), []).append((team, owner))
+            for conf in list(conferences) + ["Other"]:
+                if conf in by_conf:
+                    entries = sorted(by_conf[conf], key=lambda t: t[0].lower())
+                    body = "\n".join(f"• **{team}** — {owner}" for team, owner in entries)
+                    items.append(f"## {conf} ({len(entries)})\n{body}")
         elif not conflicts:
-            lines += ["*None yet.*"]
+            items.append("*None yet.*")
         if conflicts:
-            lines += ["", f"**⚠️ Conflicts — same team claimed twice ({len(conflicts)}) — resolve!:**"]
-            lines += [
+            body = "\n".join(
                 f"• **{team}** — {', '.join(owners)}  ← duplicate! all but one must pick another"
                 for team, owners in conflicts
-            ]
+            )
+            items.append(f"**⚠️ Conflicts — same team claimed twice ({len(conflicts)}) — resolve!:**\n{body}")
         if unset:
-            lines += ["", f"**Still need to set a nickname ({len(unset)}):**"]
-            lines += [f"• {name} — ⚠️ rename yourself to your school" for name in unset]
-        return pack(["\n".join(lines)])  # one section; pack only splits if it exceeds the limit
+            body = "\n".join(f"• {name} — ⚠️ rename yourself to your school" for name in unset)
+            items.append(f"**Still need to set a nickname ({len(unset)}):**\n{body}")
+        return pack(items)
 
     def build_available_blocks(guild: discord.Guild) -> list[str]:
         *_, taken_norm = gather_teams(guild)
