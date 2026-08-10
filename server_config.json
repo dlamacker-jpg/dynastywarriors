@@ -32,7 +32,8 @@
         { "name": "rta",                    "type": "text", "topic": "Ready to Advance — post when you've finished your week." },
         { "name": "polls",                  "type": "text", "topic": "Top 25 voting and league polls." },
         { "name": "conference-realignment", "type": "text", "topic": "Realignment talk and moves." },
-        { "name": "recruiting",             "type": "text", "topic": "Recruiting, commits, and the transfer portal." }
+        { "name": "recruiting",             "type": "text", "topic": "Recruiting, commits, and the transfer portal." },
+        { "name": "later-losers",           "type": "text", "topic": "Coaches who left the dynasty. Press F. 🪦" }
       ]
     }
   ]

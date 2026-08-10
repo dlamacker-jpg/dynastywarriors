@@ -36,6 +36,7 @@ WELCOME_CHANNEL = "newbies"
 ROLE_ON_JOIN = "Coach"           # set to None to disable auto-role; also the role counted on the boards
 TAKEN_CHANNEL = "team-assignments"
 AVAILABLE_CHANNEL = "teams-available"
+LOSERS_CHANNEL = "later-losers"
 TEAMS_FILE = Path(__file__).with_name("teams_fbs.json")
 RESERVED_FILE = Path(__file__).with_name("reserved.json")
 ALIASES_FILE = Path(__file__).with_name("aliases.json")
@@ -335,6 +336,21 @@ def main() -> None:
 
     @client.event
     async def on_member_remove(member: discord.Member) -> None:
+        # Farewell post for departing coaches (frees their team back to the board).
+        losers = discord.utils.get(member.guild.text_channels, name=LOSERS_CHANNEL)
+        coach_role = discord.utils.get(member.guild.roles, name=ROLE_ON_JOIN) if ROLE_ON_JOIN else None
+        was_coach = coach_role is None or coach_role in member.roles
+        if losers is not None and not member.bot and was_coach:
+            tn = resolve_team(member.display_name)
+            if tn is not None:
+                msg = (
+                    f"🪦 **{member.name}** has left the dynasty — **{team_by_norm[tn]}** is "
+                    "back up for grabs in #teams-available. Press F. 👋"
+                )
+            else:
+                msg = f"🪦 **{member.name}** has left the dynasty. Press F. 👋"
+            await losers.send(msg, allowed_mentions=discord.AllowedMentions.none())
+
         await refresh_all(member.guild)
 
     client.run(token)
