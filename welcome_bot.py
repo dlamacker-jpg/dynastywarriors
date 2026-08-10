@@ -187,9 +187,9 @@ def main() -> None:
             # display_name = server nickname, else account display name, else username.
             tn = resolve_team(m.display_name)
             if tn is not None:
-                holders.setdefault(tn, []).append((team_by_norm[tn], m.name))
+                holders.setdefault(tn, []).append((team_by_norm[tn], m.mention))
             else:
-                unset.append(m.name)
+                unset.append(m.mention)
         for team, owner in reserved.items():
             holders.setdefault(base_norm(team), []).append((team, owner))
 
