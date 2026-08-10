@@ -25,6 +25,7 @@ Requirements:
 import asyncio
 import json
 import os
+import random
 import re
 import sys
 import unicodedata
@@ -52,6 +53,24 @@ ALIASES = {
     "miamioh": "Miami (OH)",
     "miamiohio": "Miami (OH)",
 }
+
+# Rotating farewells for #later-losers. {name} = who left, {team} = the school they abandoned.
+FAREWELLS_WITH_TEAM = [
+    "🪦 **{name}** rage quit the dynasty. **{team}** is back on the market in #teams-available. Press F. 👋",
+    "🚪 **{name}** couldn't handle the smoke and bounced. **{team}** is up for grabs in #teams-available.",
+    "📉 Another one bites the dust — **{name}** abandoned **{team}**. It's open again in #teams-available.",
+    "🏳️ **{name}** waved the white flag. **{team}** returns to the board in #teams-available. Later, loser.",
+    "👻 **{name}** ghosted the league. **{team}** is a free agent now — claim it in #teams-available.",
+    "🧢 Turns out **{name}** was all cap. **{team}** is open again in #teams-available.",
+    "💀 **{name}** got exposed and dipped. **{team}** is available in #teams-available.",
+    "🫡 **{name}** has left the building. **{team}** is back on the board in #teams-available.",
+]
+FAREWELLS_NO_TEAM = [
+    "🪦 **{name}** left before even picking a team. Bold strategy. Press F. 👋",
+    "🚪 **{name}** dipped out early. We hardly knew ya.",
+    "👻 **{name}** ghosted the league before claiming a school. Later, loser.",
+    "🫥 **{name}** vanished without ever repping a team. F.",
+]
 
 WELCOME_MESSAGE = (
     "🏈 Welcome to **{server}**, {mention}! Glad to have you in the league.\n\n"
@@ -343,12 +362,9 @@ def main() -> None:
         if losers is not None and not member.bot and was_coach:
             tn = resolve_team(member.display_name)
             if tn is not None:
-                msg = (
-                    f"🪦 **{member.name}** has left the dynasty — **{team_by_norm[tn]}** is "
-                    "back up for grabs in #teams-available. Press F. 👋"
-                )
+                msg = random.choice(FAREWELLS_WITH_TEAM).format(name=member.name, team=team_by_norm[tn])
             else:
-                msg = f"🪦 **{member.name}** has left the dynasty. Press F. 👋"
+                msg = random.choice(FAREWELLS_NO_TEAM).format(name=member.name)
             await losers.send(msg, allowed_mentions=discord.AllowedMentions.none())
 
         await refresh_all(member.guild)
