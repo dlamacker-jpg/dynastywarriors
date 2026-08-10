@@ -186,7 +186,7 @@ def main() -> None:
         return None
 
     def owner_to_display(guild: discord.Guild, label: str) -> str:
-        """If a reserved-owner label matches a member (username/display/nick), tag them."""
+        """Tag a reserved-owner label: match a member (username/display/nick) or a role name."""
         key = label.strip().lstrip("@").lower()
         for m in guild.members:
             names = {m.name.lower()}
@@ -196,7 +196,10 @@ def main() -> None:
                 names.add(m.nick.lower())
             if key in names:
                 return m.mention
-        return label  # not in the server (or no match) — leave as plain text
+        for r in guild.roles:
+            if r.name.lower() == key:
+                return r.mention  # e.g. "Commissioner" -> @Commissioner
+        return label  # no match — leave as plain text
 
     def coach_members(guild: discord.Guild):
         coach_role = discord.utils.get(guild.roles, name=ROLE_ON_JOIN) if ROLE_ON_JOIN else None

@@ -1,5 +1,5 @@
 {
   "_comment": "Manually pre-claimed teams — for schools taken before the bot existed, or by coaches not yet in the Discord to set a nickname. Format: \"Team\": \"owner label\". The bot treats these as taken and removes them from #teams-available. If someone later joins and sets that team as their nickname, the nickname takes over. Edit this file and push to update.",
-  "Ohio State": "Commish",
+  "Ohio State": "Commissioner",
   "Notre Dame": "zayfrm717"
 }
