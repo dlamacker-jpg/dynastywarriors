@@ -133,6 +133,7 @@ def main() -> None:
     conferences = load_conferences()
     reserved = load_reserved()
     ALIASES.update(load_aliases())  # merge file aliases over the built-in defaults
+    team_by_norm = {base_norm(t): t for teams in conferences.values() for t in teams}
     intents = discord.Intents.default()
     intents.members = True  # requires the Server Members Intent (see header)
     client = discord.Client(intents=intents)
@@ -154,15 +155,17 @@ def main() -> None:
         two or more -> a conflict (duplicate) that needs resolving. Every held
         team (including conflicts) counts toward taken_norm so it leaves #teams-available.
         """
-        holders: dict[str, list[tuple[str, str]]] = {}  # norm -> [(display, owner), ...]
+        holders: dict[str, list[tuple[str, str]]] = {}  # norm -> [(school, owner), ...]
         unset = []
         for m in coach_members(guild):
-            if m.nick:
-                holders.setdefault(normalize(m.nick), []).append((m.nick, m.name))
+            # display_name = server nickname, else account display name, else username.
+            norm = normalize(m.display_name)
+            if norm in team_by_norm:
+                holders.setdefault(norm, []).append((team_by_norm[norm], m.name))
             else:
                 unset.append(m.name)
         for team, owner in reserved.items():
-            holders.setdefault(normalize(team), []).append((team, owner))
+            holders.setdefault(base_norm(team), []).append((team, owner))
 
         taken, conflicts = [], []
         for entries in holders.values():
@@ -277,23 +280,32 @@ def main() -> None:
             return
 
         # If they just picked a team another coach already holds, warn them.
-        if nick_changed and after.nick:
-            norm_new = normalize(after.nick)
-            clash = any(
-                m.id != after.id and m.nick and normalize(m.nick) == norm_new
-                for m in coach_members(after.guild)
-            )
-            if clash:
-                try:
-                    await after.send(
-                        f"⚠️ Heads up — **{after.nick}** is already taken in "
-                        f"{after.guild.name}. No duplicate teams allowed, so please pick a "
-                        "different school. Open teams are listed in #teams-available."
-                    )
-                except discord.Forbidden:
-                    pass  # their DMs are closed; the board still flags the conflict
+        if nick_changed:
+            norm_new = normalize(after.display_name)
+            if norm_new in team_by_norm:
+                clash = any(
+                    m.id != after.id and normalize(m.display_name) == norm_new
+                    for m in coach_members(after.guild)
+                )
+                if clash:
+                    try:
+                        await after.send(
+                            f"⚠️ Heads up — **{team_by_norm[norm_new]}** is already taken in "
+                            f"{after.guild.name}. No duplicate teams allowed, so please pick a "
+                            "different school. Open teams are listed in #teams-available."
+                        )
+                    except discord.Forbidden:
+                        pass  # their DMs are closed; the board still flags the conflict
 
         await refresh_all(after.guild)
+
+    @client.event
+    async def on_user_update(before: discord.User, after: discord.User) -> None:
+        # Account-level display-name changes (not server nicknames) fire here.
+        if before.name != after.name or getattr(before, "global_name", None) != getattr(after, "global_name", None):
+            for guild in client.guilds:
+                if guild.get_member(after.id) is not None:
+                    await refresh_all(guild)
 
     @client.event
     async def on_member_remove(member: discord.Member) -> None:
