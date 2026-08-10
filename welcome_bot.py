@@ -25,6 +25,7 @@ import sys
 import discord
 
 WELCOME_CHANNEL = "newbies"
+ROLE_ON_JOIN = "Recruit"  # set to None to disable auto-role
 
 WELCOME_MESSAGE = (
     "🏈 Welcome to **{server}**, {mention}! Glad to have you in the league.\n\n"
@@ -52,9 +53,25 @@ def main() -> None:
 
     @client.event
     async def on_member_join(member: discord.Member) -> None:
+        # Auto-assign the starter role.
+        if ROLE_ON_JOIN:
+            role = discord.utils.get(member.guild.roles, name=ROLE_ON_JOIN)
+            if role is None:
+                print(f"Role '{ROLE_ON_JOIN}' not found; skipping auto-role.")
+            else:
+                try:
+                    await member.add_roles(role, reason="Auto-role on join")
+                    print(f"Gave {member} the {ROLE_ON_JOIN} role.")
+                except discord.Forbidden:
+                    print(
+                        f"Couldn't assign {ROLE_ON_JOIN} to {member}: check that the bot's "
+                        "role sits ABOVE it in Server Settings -> Roles."
+                    )
+
+        # Greet them.
         channel = discord.utils.get(member.guild.text_channels, name=WELCOME_CHANNEL)
         if channel is None:
-            print(f"No #{WELCOME_CHANNEL} channel in {member.guild.name}; skipping.")
+            print(f"No #{WELCOME_CHANNEL} channel in {member.guild.name}; skipping greeting.")
             return
         await channel.send(
             WELCOME_MESSAGE.format(mention=member.mention, server=member.guild.name)
