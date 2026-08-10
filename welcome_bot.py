@@ -27,6 +27,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 import discord
@@ -63,11 +64,21 @@ WELCOME_MESSAGE = (
 )
 
 
+def base_norm(name: str) -> str:
+    """Reduce a name to comparable letters only.
+
+    - NFKD unicode folding turns fancy fonts (𝕬𝖑𝖆𝖇𝖆𝖒𝖆) and accents into plain ASCII
+    - keep letters a-z only, dropping emojis, digits/years (Bama 2027), spaces, punctuation
+    """
+    decomposed = unicodedata.normalize("NFKD", name)
+    return re.sub(r"[^a-z]", "", decomposed.lower())
+
+
 def normalize(name: str) -> str:
-    """Lowercase and strip everything but letters/numbers, then resolve aliases."""
-    key = re.sub(r"[^a-z0-9]", "", name.lower())
+    """Normalize a name, then resolve nickname/mascot aliases to the official school."""
+    key = base_norm(name)
     if key in ALIASES:
-        key = re.sub(r"[^a-z0-9]", "", ALIASES[key].lower())
+        key = base_norm(ALIASES[key])
     return key
 
 
@@ -96,7 +107,7 @@ def load_aliases() -> dict[str, str]:
     for alias, official in data.items():
         if alias.startswith("_"):
             continue
-        out[re.sub(r"[^a-z0-9]", "", alias.lower())] = official
+        out[base_norm(alias)] = official
     return out
 
 
