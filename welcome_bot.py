@@ -121,39 +121,59 @@ def main() -> None:
             yield m
 
     def gather_teams(guild: discord.Guild):
-        """Return (taken, unset, taken_norm) from coach nicknames + the reserved list."""
-        taken, unset, taken_norm = [], [], set()
+        """Return (taken, conflicts, unset, taken_norm).
+
+        A team held by exactly one coach/reserved entry -> taken. A team held by
+        two or more -> a conflict (duplicate) that needs resolving. Every held
+        team (including conflicts) counts toward taken_norm so it leaves #teams-available.
+        """
+        holders: dict[str, list[tuple[str, str]]] = {}  # norm -> [(display, owner), ...]
+        unset = []
         for m in coach_members(guild):
             if m.nick:
-                taken.append((m.nick, m.name))
-                taken_norm.add(normalize(m.nick))
+                holders.setdefault(normalize(m.nick), []).append((m.nick, m.name))
             else:
                 unset.append(m.name)
         for team, owner in reserved.items():
-            if normalize(team) not in taken_norm:  # a live nickname wins over the reserved entry
-                taken.append((team, owner))
-                taken_norm.add(normalize(team))
+            holders.setdefault(normalize(team), []).append((team, owner))
+
+        taken, conflicts = [], []
+        for entries in holders.values():
+            if len(entries) == 1:
+                taken.append(entries[0])
+            else:
+                conflicts.append((entries[0][0], [owner for _, owner in entries]))
         taken.sort(key=lambda t: t[0].lower())
-        return taken, unset, taken_norm
+        conflicts.sort(key=lambda c: c[0].lower())
+        return taken, conflicts, unset, set(holders.keys())
 
     def build_taken_blocks(guild: discord.Guild) -> list[str]:
-        taken, unset, _ = gather_teams(guild)
+        taken, conflicts, unset, _ = gather_teams(guild)
 
         lines = [
             "# 🏈 Teams Taken — Dynasty Warriors",
             "*Auto-updates as coaches set their nickname to their school (rule #9). "
             "Open schools are in #teams-available.*",
             "",
-            f"**Taken ({len(taken)}):**",
+            f"**Taken ({len(taken) + len(conflicts)}):**",
         ]
-        lines += [f"• **{team}** — {name}" for team, name in taken] or ["*None yet.*"]
+        if taken:
+            lines += [f"• **{team}** — {owner}" for team, owner in taken]
+        elif not conflicts:
+            lines += ["*None yet.*"]
+        if conflicts:
+            lines += ["", f"**⚠️ Conflicts — same team claimed twice ({len(conflicts)}) — resolve!:**"]
+            lines += [
+                f"• **{team}** — {', '.join(owners)}  ← duplicate! all but one must pick another"
+                for team, owners in conflicts
+            ]
         if unset:
             lines += ["", f"**Still need to set a nickname ({len(unset)}):**"]
             lines += [f"• {name} — ⚠️ rename yourself to your school" for name in unset]
         return pack(["\n".join(lines)])  # one section; pack only splits if it exceeds the limit
 
     def build_available_blocks(guild: discord.Guild) -> list[str]:
-        _, _, taken_norm = gather_teams(guild)
+        *_, taken_norm = gather_teams(guild)
         sections, total = [], 0
         for conf, teams in conferences.items():
             open_teams = [t for t in teams if normalize(t) not in taken_norm]
@@ -225,8 +245,28 @@ def main() -> None:
 
     @client.event
     async def on_member_update(before: discord.Member, after: discord.Member) -> None:
-        if before.nick != after.nick or set(before.roles) != set(after.roles):
-            await refresh_all(after.guild)
+        nick_changed = before.nick != after.nick
+        if not (nick_changed or set(before.roles) != set(after.roles)):
+            return
+
+        # If they just picked a team another coach already holds, warn them.
+        if nick_changed and after.nick:
+            norm_new = normalize(after.nick)
+            clash = any(
+                m.id != after.id and m.nick and normalize(m.nick) == norm_new
+                for m in coach_members(after.guild)
+            )
+            if clash:
+                try:
+                    await after.send(
+                        f"⚠️ Heads up — **{after.nick}** is already taken in "
+                        f"{after.guild.name}. No duplicate teams allowed, so please pick a "
+                        "different school. Open teams are listed in #teams-available."
+                    )
+                except discord.Forbidden:
+                    pass  # their DMs are closed; the board still flags the conflict
+
+        await refresh_all(after.guild)
 
     @client.event
     async def on_member_remove(member: discord.Member) -> None:
