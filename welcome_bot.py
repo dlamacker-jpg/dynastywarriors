@@ -32,12 +32,17 @@ import unicodedata
 from pathlib import Path
 
 import discord
+from discord.ext import tasks
 
 WELCOME_CHANNEL = "newbies"
 ROLE_ON_JOIN = "Coach"           # set to None to disable auto-role; also the role counted on the boards
 TAKEN_CHANNEL = "team-assignments"
 AVAILABLE_CHANNEL = "teams-available"
 LOSERS_CHANNEL = "later-losers"
+ACTIVE_CHECK_CHANNEL = "active-checks"    # where the active check is posted
+ACTIVE_CHECK_DAYS = 3                     # how often it goes out
+ACTIVE_CHECK_EMOJI = "👍"                  # reaction coaches use to confirm
+ACTIVE_CHECK_MARKER = "🚨 ACTIVE CHECK"    # used to find the previous check
 TEAMS_FILE = Path(__file__).with_name("teams_fbs.json")
 RESERVED_FILE = Path(__file__).with_name("reserved.json")
 ALIASES_FILE = Path(__file__).with_name("aliases.json")
@@ -302,11 +307,43 @@ def main() -> None:
             if avail_ch is not None:
                 await sync_channel(avail_ch, build_available_blocks(guild))
 
+    @tasks.loop(hours=6)
+    async def active_check_loop() -> None:
+        """Post an active check if the last one is older than ACTIVE_CHECK_DAYS.
+
+        Checking the last post's age (instead of a naive timer) makes the cadence
+        survive restarts/redeploys — no reset, no double-posting.
+        """
+        for guild in client.guilds:
+            channel = discord.utils.get(guild.text_channels, name=ACTIVE_CHECK_CHANNEL)
+            if channel is None:
+                continue
+            last = None
+            async for m in channel.history(limit=50):
+                if m.author.id == client.user.id and m.content.startswith(ACTIVE_CHECK_MARKER):
+                    last = m
+                    break
+            if last is not None:
+                age_days = (discord.utils.utcnow() - last.created_at).total_seconds() / 86400
+                if age_days < ACTIVE_CHECK_DAYS:
+                    continue
+
+            msg = await channel.send(
+                f"{ACTIVE_CHECK_MARKER} — @everyone\n"
+                f"Hit {ACTIVE_CHECK_EMOJI} within 48 hours to confirm you're still active.\n"
+                "Per rule #6, repeated no-shows risk getting booted from the league.",
+                allowed_mentions=discord.AllowedMentions(everyone=True, roles=True),
+            )
+            await msg.add_reaction(ACTIVE_CHECK_EMOJI)
+            print(f"Posted active check in #{ACTIVE_CHECK_CHANNEL} ({guild.name}).")
+
     @client.event
     async def on_ready() -> None:
         print(f"Bot online as {client.user}. Greeting members and tracking teams...")
         for guild in client.guilds:
             await refresh_all(guild)
+        if not active_check_loop.is_running():
+            active_check_loop.start()
 
     @client.event
     async def on_member_join(member: discord.Member) -> None:
