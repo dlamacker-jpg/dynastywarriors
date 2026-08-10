@@ -3,10 +3,12 @@
 Persistent bot for Dynasty Warriors. Two jobs:
 
   1. Greet new members in #newbies and auto-assign the starter role.
-  2. Keep a live board in #team-assignments: "Teams Taken" (from coach nicknames,
-     rule #9) and "Teams Available" (everything in teams_fbs.json that isn't
-     claimed). It refreshes whenever someone joins, changes nickname, gains/loses
-     a role, or leaves.
+  2. Keep two live boards, both driven by coach nicknames (rule #9):
+       - #team-assignments : "Teams Taken"
+       - #teams-available  : "Teams Available" (everything in teams_fbs.json not
+                              claimed), one team per line, grouped by conference.
+     Both refresh whenever someone joins, changes nickname, gains/loses a role,
+     or leaves.
 
 Unlike the one-shot post_*.py scripts, this stays running (that's why it lives on
 Railway). It only reacts while running.
@@ -30,8 +32,9 @@ from pathlib import Path
 import discord
 
 WELCOME_CHANNEL = "newbies"
-ROLE_ON_JOIN = "Coach"          # set to None to disable auto-role; also the role counted on the board
-TEAMS_CHANNEL = "team-assignments"
+ROLE_ON_JOIN = "Coach"           # set to None to disable auto-role; also the role counted on the boards
+TAKEN_CHANNEL = "team-assignments"
+AVAILABLE_CHANNEL = "teams-available"
 TEAMS_FILE = Path(__file__).with_name("teams_fbs.json")
 
 # Common shorthand -> official name (both get normalized before comparing).
@@ -50,9 +53,9 @@ WELCOME_MESSAGE = (
     "🏈 Welcome to **{server}**, {mention}! Glad to have you in the league.\n\n"
     "Get started:\n"
     "• 📜 Read the rules in **#rules**\n"
-    "• 🏫 Claim your team in **#how-to-join**\n"
+    "• 🏫 Claim your team in **#how-to-join** (browse open schools in **#teams-available**)\n"
     "• ✏️ Change your server nickname to the **school you're using** (rule #9) — "
-    "this also updates the **#team-assignments** board automatically\n"
+    "this updates the team boards automatically\n"
     "• 👋 Say what's up and introduce yourself right here\n\n"
     "It's just a game — play hard, have fun. Let's run it. 🏆"
 )
@@ -72,15 +75,15 @@ def load_conferences() -> dict[str, list[str]]:
     return {k: v for k, v in data.items() if not k.startswith("_")}
 
 
-def chunk(lines: list[str], limit: int = 1900) -> list[str]:
-    """Pack lines into as few messages as possible, never splitting a line."""
+def pack(items: list[str], limit: int = 1900) -> list[str]:
+    """Pack whole items into as few messages as possible, joined by blank lines."""
     blocks, cur = [], ""
-    for line in lines:
-        if cur and len(cur) + 1 + len(line) > limit:
+    for item in items:
+        if cur and len(cur) + 2 + len(item) > limit:
             blocks.append(cur)
-            cur = line
+            cur = item
         else:
-            cur = f"{cur}\n{line}" if cur else line
+            cur = f"{cur}\n\n{item}" if cur else item
     if cur:
         blocks.append(cur)
     return blocks
@@ -97,25 +100,28 @@ def main() -> None:
     client = discord.Client(intents=intents)
     roster_lock = asyncio.Lock()
 
-    def build_board(guild: discord.Guild) -> list[str]:
+    def coach_members(guild: discord.Guild):
         coach_role = discord.utils.get(guild.roles, name=ROLE_ON_JOIN) if ROLE_ON_JOIN else None
-        taken, unset, taken_norm = [], [], set()
         for m in guild.members:
             if m.bot:
                 continue
             if coach_role and coach_role not in m.roles:
                 continue
+            yield m
+
+    def build_taken_blocks(guild: discord.Guild) -> list[str]:
+        taken, unset = [], []
+        for m in coach_members(guild):
             if m.nick:
                 taken.append((m.nick, m.name))
-                taken_norm.add(normalize(m.nick))
             else:
                 unset.append(m.name)
         taken.sort(key=lambda t: t[0].lower())
 
-        # --- Taken block ---
         lines = [
             "# 🏈 Teams Taken — Dynasty Warriors",
-            "*Auto-updates as coaches set their nickname to their school (rule #9).*",
+            "*Auto-updates as coaches set their nickname to their school (rule #9). "
+            "Open schools are in #teams-available.*",
             "",
             f"**Taken ({len(taken)}):**",
         ]
@@ -123,42 +129,51 @@ def main() -> None:
         if unset:
             lines += ["", f"**Still need to set a nickname ({len(unset)}):**"]
             lines += [f"• {name} — ⚠️ rename yourself to your school" for name in unset]
+        return pack(["\n".join(lines)])  # one section; pack only splits if it exceeds the limit
 
-        # --- Available block ---
-        total_open = 0
-        avail_lines = []
+    def build_available_blocks(guild: discord.Guild) -> list[str]:
+        taken_norm = {normalize(m.nick) for m in coach_members(guild) if m.nick}
+        sections, total = [], 0
         for conf, teams in conferences.items():
             open_teams = [t for t in teams if normalize(t) not in taken_norm]
-            total_open += len(open_teams)
+            total += len(open_teams)
             if open_teams:
-                avail_lines.append(f"**{conf} ({len(open_teams)}):** " + ", ".join(open_teams))
-        avail_header = [f"# ✅ Teams Available ({total_open})", "*Pick an open school and set it as your nickname to claim it.*", ""]
+                body = "\n".join(f"• {t}" for t in open_teams)
+                sections.append(f"## {conf} ({len(open_teams)})\n{body}")
+        header = (
+            f"# ✅ Teams Available ({total})\n"
+            "*Pick an open school below, then set it as your server nickname (rule #9) to claim it. "
+            "It'll move to #team-assignments automatically.*"
+        )
+        return pack([header] + sections)
 
-        return chunk(lines) + chunk(avail_header + avail_lines)
-
-    async def refresh_board(guild: discord.Guild) -> None:
-        channel = discord.utils.get(guild.text_channels, name=TEAMS_CHANNEL)
-        if channel is None:
-            return
-        blocks = build_board(guild)
+    async def sync_channel(channel: discord.TextChannel, blocks: list[str]) -> None:
         no_pings = discord.AllowedMentions.none()
+        existing = [m async for m in channel.history(limit=100) if m.author.id == client.user.id]
+        existing.reverse()  # oldest first, to match block order
+        for i, content in enumerate(blocks):
+            if i < len(existing):
+                if existing[i].content != content:
+                    await existing[i].edit(content=content, allowed_mentions=no_pings)
+            else:
+                await channel.send(content, allowed_mentions=no_pings)
+        for extra in existing[len(blocks):]:
+            await extra.delete()
+
+    async def refresh_all(guild: discord.Guild) -> None:
         async with roster_lock:
-            existing = [m async for m in channel.history(limit=100) if m.author.id == client.user.id]
-            existing.reverse()  # oldest first, to match block order
-            for i, content in enumerate(blocks):
-                if i < len(existing):
-                    if existing[i].content != content:
-                        await existing[i].edit(content=content, allowed_mentions=no_pings)
-                else:
-                    await channel.send(content, allowed_mentions=no_pings)
-            for extra in existing[len(blocks):]:
-                await extra.delete()
+            taken_ch = discord.utils.get(guild.text_channels, name=TAKEN_CHANNEL)
+            avail_ch = discord.utils.get(guild.text_channels, name=AVAILABLE_CHANNEL)
+            if taken_ch is not None:
+                await sync_channel(taken_ch, build_taken_blocks(guild))
+            if avail_ch is not None:
+                await sync_channel(avail_ch, build_available_blocks(guild))
 
     @client.event
     async def on_ready() -> None:
         print(f"Bot online as {client.user}. Greeting members and tracking teams...")
         for guild in client.guilds:
-            await refresh_board(guild)
+            await refresh_all(guild)
 
     @client.event
     async def on_member_join(member: discord.Member) -> None:
@@ -185,16 +200,16 @@ def main() -> None:
         else:
             print(f"No #{WELCOME_CHANNEL} channel; skipped greeting.")
 
-        await refresh_board(member.guild)
+        await refresh_all(member.guild)
 
     @client.event
     async def on_member_update(before: discord.Member, after: discord.Member) -> None:
         if before.nick != after.nick or set(before.roles) != set(after.roles):
-            await refresh_board(after.guild)
+            await refresh_all(after.guild)
 
     @client.event
     async def on_member_remove(member: discord.Member) -> None:
-        await refresh_board(member.guild)
+        await refresh_all(member.guild)
 
     client.run(token)
 
