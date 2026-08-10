@@ -37,6 +37,7 @@ TAKEN_CHANNEL = "team-assignments"
 AVAILABLE_CHANNEL = "teams-available"
 TEAMS_FILE = Path(__file__).with_name("teams_fbs.json")
 RESERVED_FILE = Path(__file__).with_name("reserved.json")
+ALIASES_FILE = Path(__file__).with_name("aliases.json")
 
 # Common shorthand -> official name (both get normalized before comparing).
 ALIASES = {
@@ -85,6 +86,20 @@ def load_reserved() -> dict[str, str]:
     return {k: v for k, v in data.items() if not k.startswith("_")}
 
 
+def load_aliases() -> dict[str, str]:
+    """{normalized nickname/mascot: official school name}. Missing file = none."""
+    if not ALIASES_FILE.exists():
+        return {}
+    with ALIASES_FILE.open(encoding="utf-8") as f:
+        data = json.load(f)
+    out = {}
+    for alias, official in data.items():
+        if alias.startswith("_"):
+            continue
+        out[re.sub(r"[^a-z0-9]", "", alias.lower())] = official
+    return out
+
+
 def pack(items: list[str], limit: int = 1900) -> list[str]:
     """Pack whole items into as few messages as possible, joined by blank lines."""
     blocks, cur = [], ""
@@ -106,6 +121,7 @@ def main() -> None:
 
     conferences = load_conferences()
     reserved = load_reserved()
+    ALIASES.update(load_aliases())  # merge file aliases over the built-in defaults
     intents = discord.Intents.default()
     intents.members = True  # requires the Server Members Intent (see header)
     client = discord.Client(intents=intents)
