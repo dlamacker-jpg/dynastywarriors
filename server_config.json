@@ -14,6 +14,7 @@
       "channels": [
         { "name": "announcements", "type": "text", "topic": "Official league news from the commish." },
         { "name": "how-to-join",   "type": "text", "topic": "New here? Start here to claim a team." },
+        { "name": "team-assignments", "type": "text", "topic": "Live list of which schools are taken — auto-updated from coach nicknames." },
         { "name": "rules",         "type": "text", "topic": "League rules — read before you play." },
         { "name": "champions",     "type": "text", "topic": "Hall of champions — past national title winners." },
         { "name": "newbies",       "type": "text", "topic": "Intros for new coaches." }
