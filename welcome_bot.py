@@ -25,7 +25,7 @@ import sys
 import discord
 
 WELCOME_CHANNEL = "newbies"
-ROLE_ON_JOIN = "Recruit"  # set to None to disable auto-role
+ROLE_ON_JOIN = "Coach"  # set to None to disable auto-role
 
 WELCOME_MESSAGE = (
     "🏈 Welcome to **{server}**, {mention}! Glad to have you in the league.\n\n"
