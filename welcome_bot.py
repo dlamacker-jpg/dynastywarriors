@@ -134,10 +134,36 @@ def main() -> None:
     reserved = load_reserved()
     ALIASES.update(load_aliases())  # merge file aliases over the built-in defaults
     team_by_norm = {base_norm(t): t for teams in conferences.values() for t in teams}
+
+    # For the substring fallback: map every team-norm and alias key to its team-norm,
+    # keeping only keys >= 5 chars (shorter ones like "usc"/"cal" would false-match inside
+    # unrelated names). Sorted longest-first so the longest match wins.
+    key_to_team = {tn: tn for tn in team_by_norm}
+    for akey, official in ALIASES.items():
+        tn = base_norm(official)
+        if tn in team_by_norm:
+            key_to_team.setdefault(akey, tn)
+    substr_keys = sorted((k for k in key_to_team if len(k) >= 5), key=len, reverse=True)
+
     intents = discord.Intents.default()
     intents.members = True  # requires the Server Members Intent (see header)
     client = discord.Client(intents=intents)
     roster_lock = asyncio.Lock()
+
+    def resolve_team(display: str) -> str | None:
+        """Return the team-norm a coach's display name claims, or None.
+
+        1. exact match (with alias resolution): 'Bama' -> alabama
+        2. substring fallback for school+mascot mashups: 'Texas🟠longhorn' -> texas,
+           longest match wins so 'TexasTechRaiders' -> texastech, not texas.
+        """
+        norm = normalize(display)
+        if norm in team_by_norm:
+            return norm
+        for key in substr_keys:
+            if key in norm:
+                return key_to_team[key]
+        return None
 
     def coach_members(guild: discord.Guild):
         coach_role = discord.utils.get(guild.roles, name=ROLE_ON_JOIN) if ROLE_ON_JOIN else None
@@ -159,9 +185,9 @@ def main() -> None:
         unset = []
         for m in coach_members(guild):
             # display_name = server nickname, else account display name, else username.
-            norm = normalize(m.display_name)
-            if norm in team_by_norm:
-                holders.setdefault(norm, []).append((team_by_norm[norm], m.name))
+            tn = resolve_team(m.display_name)
+            if tn is not None:
+                holders.setdefault(tn, []).append((team_by_norm[tn], m.name))
             else:
                 unset.append(m.name)
         for team, owner in reserved.items():
@@ -281,16 +307,16 @@ def main() -> None:
 
         # If they just picked a team another coach already holds, warn them.
         if nick_changed:
-            norm_new = normalize(after.display_name)
-            if norm_new in team_by_norm:
+            tn_new = resolve_team(after.display_name)
+            if tn_new is not None:
                 clash = any(
-                    m.id != after.id and normalize(m.display_name) == norm_new
+                    m.id != after.id and resolve_team(m.display_name) == tn_new
                     for m in coach_members(after.guild)
                 )
                 if clash:
                     try:
                         await after.send(
-                            f"⚠️ Heads up — **{team_by_norm[norm_new]}** is already taken in "
+                            f"⚠️ Heads up — **{team_by_norm[tn_new]}** is already taken in "
                             f"{after.guild.name}. No duplicate teams allowed, so please pick a "
                             "different school. Open teams are listed in #teams-available."
                         )
