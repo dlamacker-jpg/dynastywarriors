@@ -8,3 +8,7 @@ venv/
 # Python
 __pycache__/
 *.pyc
+
+# macOS metadata (common on external drives)
+._*
+.DS_Store
