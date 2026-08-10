@@ -36,6 +36,7 @@ ROLE_ON_JOIN = "Coach"           # set to None to disable auto-role; also the ro
 TAKEN_CHANNEL = "team-assignments"
 AVAILABLE_CHANNEL = "teams-available"
 TEAMS_FILE = Path(__file__).with_name("teams_fbs.json")
+RESERVED_FILE = Path(__file__).with_name("reserved.json")
 
 # Common shorthand -> official name (both get normalized before comparing).
 ALIASES = {
@@ -75,6 +76,15 @@ def load_conferences() -> dict[str, list[str]]:
     return {k: v for k, v in data.items() if not k.startswith("_")}
 
 
+def load_reserved() -> dict[str, str]:
+    """Manually pre-claimed teams: {team: owner label}. Missing file = none."""
+    if not RESERVED_FILE.exists():
+        return {}
+    with RESERVED_FILE.open(encoding="utf-8") as f:
+        data = json.load(f)
+    return {k: v for k, v in data.items() if not k.startswith("_")}
+
+
 def pack(items: list[str], limit: int = 1900) -> list[str]:
     """Pack whole items into as few messages as possible, joined by blank lines."""
     blocks, cur = [], ""
@@ -95,6 +105,7 @@ def main() -> None:
         sys.exit("Set DISCORD_BOT_TOKEN (Railway Variables, or your terminal).")
 
     conferences = load_conferences()
+    reserved = load_reserved()
     intents = discord.Intents.default()
     intents.members = True  # requires the Server Members Intent (see header)
     client = discord.Client(intents=intents)
@@ -109,14 +120,24 @@ def main() -> None:
                 continue
             yield m
 
-    def build_taken_blocks(guild: discord.Guild) -> list[str]:
-        taken, unset = [], []
+    def gather_teams(guild: discord.Guild):
+        """Return (taken, unset, taken_norm) from coach nicknames + the reserved list."""
+        taken, unset, taken_norm = [], [], set()
         for m in coach_members(guild):
             if m.nick:
                 taken.append((m.nick, m.name))
+                taken_norm.add(normalize(m.nick))
             else:
                 unset.append(m.name)
+        for team, owner in reserved.items():
+            if normalize(team) not in taken_norm:  # a live nickname wins over the reserved entry
+                taken.append((team, owner))
+                taken_norm.add(normalize(team))
         taken.sort(key=lambda t: t[0].lower())
+        return taken, unset, taken_norm
+
+    def build_taken_blocks(guild: discord.Guild) -> list[str]:
+        taken, unset, _ = gather_teams(guild)
 
         lines = [
             "# 🏈 Teams Taken — Dynasty Warriors",
@@ -132,7 +153,7 @@ def main() -> None:
         return pack(["\n".join(lines)])  # one section; pack only splits if it exceeds the limit
 
     def build_available_blocks(guild: discord.Guild) -> list[str]:
-        taken_norm = {normalize(m.nick) for m in coach_members(guild) if m.nick}
+        _, _, taken_norm = gather_teams(guild)
         sections, total = [], 0
         for conf, teams in conferences.items():
             open_teams = [t for t in teams if normalize(t) not in taken_norm]
