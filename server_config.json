@@ -1,0 +1,37 @@
+{
+  "server_name": "Dynasty Warriors - NCAA CFB 2027",
+
+  "roles": [
+    { "name": "Commissioner",    "color": "#e74c3c", "hoist": true,  "mentionable": true,  "admin": true },
+    { "name": "Co-Commissioner", "color": "#e67e22", "hoist": true,  "mentionable": true,  "admin": false },
+    { "name": "Coach",           "color": "#3498db", "hoist": true,  "mentionable": true,  "admin": false },
+    { "name": "Recruit",         "color": "#95a5a6", "hoist": true,  "mentionable": true,  "admin": false }
+  ],
+
+  "categories": [
+    {
+      "name": "Welcome",
+      "channels": [
+        { "name": "announcements", "type": "text", "topic": "Official league news from the commish." },
+        { "name": "how-to-join",   "type": "text", "topic": "New here? Start here to claim a team." },
+        { "name": "rules",         "type": "text", "topic": "League rules — read before you play." },
+        { "name": "champions",     "type": "text", "topic": "Hall of champions — past national title winners." },
+        { "name": "newbies",       "type": "text", "topic": "Intros for new coaches." }
+      ]
+    },
+    {
+      "name": "Dynasty Chat",
+      "channels": [
+        { "name": "general",                "type": "text" },
+        { "name": "user-game-coordination", "type": "text", "topic": "Arrange your user-vs-user games." },
+        { "name": "streaming",              "type": "text", "topic": "Drop your stream links when you're live." },
+        { "name": "schedule-request",       "type": "text", "topic": "Request scheduling changes / makeup games." },
+        { "name": "highlight-tapes",        "type": "text", "topic": "Post your best clips." },
+        { "name": "rta",                    "type": "text", "topic": "Ready to Advance — post when you've finished your week." },
+        { "name": "polls",                  "type": "text", "topic": "Top 25 voting and league polls." },
+        { "name": "conference-realignment", "type": "text", "topic": "Realignment talk and moves." },
+        { "name": "recruiting",             "type": "text", "topic": "Recruiting, commits, and the transfer portal." }
+      ]
+    }
+  ]
+}
