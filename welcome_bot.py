@@ -262,11 +262,14 @@ async def ai_recap(week: int, games: list, images: list, recruit_images: list | 
 
 
 async def ai_preseason(recruit_images: list, heisman_images: list, banter: str,
-                       opener_week: int | None, opener_games: list) -> str | None:
-    """Preseason edition — no game results yet. Recruiting/preseason watch/hype + openers."""
+                       season: list) -> str | None:
+    """Preseason edition — no game results yet. Recruiting/watch/hype + full-season storylines.
+
+    `season` is an ordered list of (week:int, games:list[[home, away]]).
+    """
     if anthropic is None or not os.environ.get("ANTHROPIC_API_KEY"):
         return None
-    if not (recruit_images or heisman_images or banter or opener_games):
+    if not (recruit_images or heisman_images or banter or season):
         return None
     content: list = []
     if recruit_images:
@@ -279,19 +282,26 @@ async def ai_preseason(recruit_images: list, heisman_images: list, banter: str,
         f"\n\n=== CHAT MESSAGES (coach: message) — mine for preseason trash talk ===\n{banter}"
         if banter else ""
     )
-    opener_block = ""
-    if opener_games:
-        om = "\n".join(f"- {a} at {h}" for h, a in opener_games)
-        opener_block = f"\n\nOPENING SLATE (Week {opener_week}) user-vs-user matchups:\n{om}"
+    season_block = ""
+    opener_week = season[0][0] if season else None
+    if season:
+        wk_lines = [f"Week {wk}: " + "; ".join(f"{a} at {h}" for h, a in games) for wk, games in season]
+        season_block = ("\n\nFULL SEASON user-vs-user slate (every week; use ONLY these games and weeks):\n"
+                        + "\n".join(wk_lines))
     content.append({
         "type": "text",
         "text": (
             "You are the beat writer for 'The Dynasty Dispatch', the newspaper of a College Football 27 online "
             "dynasty. This is the PRESEASON edition — NO games have been played yet, so do NOT report or invent any "
             "scores or results. A coach's Discord name is usually their school."
-            f"{banter_block}{opener_block}\n\n"
+            f"{banter_block}{season_block}\n\n"
             "Write a lively preseason edition in Discord markdown starting with "
-            f"'# 📰 The Dynasty Dispatch — Preseason'.\n"
+            "'# 📰 The Dynasty Dispatch — Preseason'.\n"
+            "**Season storylines** — this is the centerpiece. Under a '## 🍿 Storylines to Watch' header, scan the "
+            "ENTIRE season slate above and call out 4-6 storylines: marquee heavyweight clashes, rivalry games, "
+            "revenge angles, brutal gauntlet stretches for a team, and circle-the-calendar matchups. Cite the "
+            "specific week for each (e.g. 'Week 13: **Ohio State** vs **Michigan**'). Bold the teams. Use only the "
+            "games and weeks listed above — never invent a matchup.\n"
             "**Recruiting** — if recruiting screenshots are attached, add a '## 📈 Recruiting Trail' header with 2-5 "
             "bullets (top classes, notable commits with name/stars/position, portal moves). Bold the school. Omit if "
             "no recruiting screenshots.\n"
@@ -300,10 +310,10 @@ async def ai_preseason(recruit_images: list, heisman_images: list, banter: str,
             "**Trash talk** — if chat messages are provided, add a '## 🗣️ Bulletin Board' header with 2-4 of the "
             "punchiest quotes, in quotation marks, attributed to the coach (**— Team**). Real messages only; light "
             "smack is the vibe, skip anything genuinely nasty or personal. Omit if nothing good.\n"
-            "**Openers** — if an opening slate is provided, END with a '## 🔥 Season Openers' header previewing the "
+            "**Openers** — if a season slate is provided, END with a '## 🔥 Season Openers' header previewing the "
             "2-3 biggest Week " + (str(opener_week) if opener_week is not None else "0") + " games (bold both teams, "
             "one line of hype each). Only use the games listed.\n"
-            "Never fabricate a section with no source material. Keep it under 1900 characters."
+            "Never fabricate a section with no source material. Keep it under 2500 characters."
         ),
     })
     try:
