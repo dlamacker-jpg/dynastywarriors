@@ -1,6 +1,6 @@
 {
   "_comment": "SAMPLE test schedule — replace with the real one from your team screenshots/video. Keyed by week (string); each game is [home_team, away_team], both user teams. The bot posts each week's matchups in #user-game-coordination on the 48h advance cadence and @tags both coaches (plain bold name if a coach hasn't joined yet).",
-  "1": [
+  "0": [
     ["Ohio State", "LSU"],
     ["Texas", "Oregon"],
     ["Georgia", "Alabama"],

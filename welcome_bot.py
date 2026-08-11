@@ -46,6 +46,7 @@ ACTIVE_CHECK_MARKER = "🚨 ACTIVE CHECK"    # used to find the previous check
 MATCHUPS_CHANNEL = "user-game-coordination"  # where weekly user games are posted
 ADVANCE_HOURS = 48                           # post the next week every 48h (the force-advance cadence)
 MATCHUPS_MARKER = "🏈 Week"                    # used to find the last posted week
+QUIET_MODE = True  # TEST: render @tags/checks as clickable but DON'T ping. Set False to go live.
 TEAMS_FILE = Path(__file__).with_name("teams_fbs.json")
 RESERVED_FILE = Path(__file__).with_name("reserved.json")
 ALIASES_FILE = Path(__file__).with_name("aliases.json")
@@ -350,7 +351,8 @@ def main() -> None:
             lines.append(f"• {a} ({away})  @  {h} ({home})")
         if len(games) == 0:
             lines.append("*No user-vs-user games this week.*")
-        await channel.send("\n".join(lines), allowed_mentions=discord.AllowedMentions(users=True))
+        allowed = discord.AllowedMentions.none() if QUIET_MODE else discord.AllowedMentions(users=True)
+        await channel.send("\n".join(lines), allowed_mentions=allowed)
 
     @tasks.loop(hours=3)
     async def advance_loop() -> None:
@@ -363,15 +365,15 @@ def main() -> None:
             channel = discord.utils.get(guild.text_channels, name=MATCHUPS_CHANNEL)
             if channel is None:
                 continue
-            last_week, last_time = 0, None
+            last_week, last_time = None, None
             async for m in channel.history(limit=100):
                 if m.author.id == client.user.id and m.content.startswith(MATCHUPS_MARKER):
                     mt = re.match(rf"{re.escape(MATCHUPS_MARKER)} (\d+)", m.content)
                     if mt:
                         last_week, last_time = int(mt.group(1)), m.created_at
                         break
-            if last_week == 0:
-                next_week = weeks[0]  # season kickoff: post the first week
+            if last_week is None:
+                next_week = weeks[0]  # season kickoff: post the first week (may be Week 0)
             else:
                 if last_time and (discord.utils.utcnow() - last_time).total_seconds() < ADVANCE_HOURS * 3600:
                     continue
@@ -407,7 +409,10 @@ def main() -> None:
                 f"{ACTIVE_CHECK_MARKER} — @everyone\n"
                 f"Hit {ACTIVE_CHECK_EMOJI} within 48 hours to confirm you're still active.\n"
                 "Per rule #6, repeated no-shows risk getting booted from the league.",
-                allowed_mentions=discord.AllowedMentions(everyone=True, roles=True),
+                allowed_mentions=(
+                    discord.AllowedMentions.none() if QUIET_MODE
+                    else discord.AllowedMentions(everyone=True, roles=True)
+                ),
             )
             await msg.add_reaction(ACTIVE_CHECK_EMOJI)
             print(f"Posted active check in #{ACTIVE_CHECK_CHANNEL} ({guild.name}).")
