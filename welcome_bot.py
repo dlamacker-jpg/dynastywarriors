@@ -24,6 +24,7 @@ Requirements:
 
 import asyncio
 import base64
+import io
 import json
 import os
 import random
@@ -40,7 +41,13 @@ try:
 except ImportError:
     anthropic = None
 
-RECAP_MODEL = "claude-opus-5"  # Claude vision model that reads the box-score photos
+try:
+    import openai  # optional: enables the ChatGPT-rendered Dispatch graphic
+except ImportError:
+    openai = None
+
+RECAP_MODEL = "claude-opus-5"    # Claude vision model that reads the box-score photos
+IMAGE_MODEL = "gpt-image-1"      # OpenAI image model that renders the Dispatch graphic
 
 WELCOME_CHANNEL = "newbies"
 ROLE_ON_JOIN = "Coach"           # set to None to disable auto-role; also the role counted on the boards
@@ -365,6 +372,39 @@ async def ai_preseason(recruit_images: list, heisman_images: list, banter: str,
     except Exception as exc:
         _last_ai_error = f"API error: {type(exc).__name__}: {exc}"
         print(f"AI preseason failed: {exc}")
+        return None
+
+
+async def ai_dispatch_image(dispatch_text: str, week_label: str) -> bytes | None:
+    """Feed the finished Dispatch text to OpenAI's image model and return a PNG, or None."""
+    global _last_ai_error
+    if openai is None:
+        _last_ai_error = "openai library not installed on the host"
+        print(f"Dispatch image skipped: {_last_ai_error}")
+        return None
+    if not os.environ.get("OPENAI_API_KEY"):
+        _last_ai_error = "OPENAI_API_KEY not set in the running process"
+        print(f"Dispatch image skipped: {_last_ai_error}")
+        return None
+    # Strip Discord markdown so the model reads the content, not the syntax.
+    clean = re.sub(r"[#*_`>]", "", dispatch_text).strip()
+    prompt = (
+        "Design a bold, premium sports-broadcast graphic — the front page of a college football "
+        f"league newspaper called 'The Dynasty Dispatch' ({week_label}). Use a dynamic, high-energy "
+        "layout: dramatic stadium lighting, team-color panels, big condensed headline typography, clean "
+        "scoreboard/matchup blocks, and tidy section headers for game results, recruiting, the Heisman "
+        "watch, and the biggest upcoming matchups. Sports-network aesthetic, no real brand logos. "
+        "Base every headline and result on this recap:\n\n" + clean
+    )
+    try:
+        client = openai.AsyncOpenAI()
+        res = await client.images.generate(
+            model=IMAGE_MODEL, prompt=prompt, size="1536x1024", quality="medium", n=1
+        )
+        return base64.b64decode(res.data[0].b64_json)
+    except Exception as exc:
+        _last_ai_error = f"image API error: {type(exc).__name__}: {exc}"
+        print(f"Dispatch image failed: {exc}")
         return None
 
 
@@ -759,10 +799,13 @@ def main() -> None:
             return "no #league-news channel"
         paper = await build_preseason(guild)
         await send_paper(news_ch, paper)
+        img = await ai_dispatch_image(paper, "Preseason")
+        if img:
+            await news_ch.send(file=discord.File(io.BytesIO(img), filename="dispatch-preseason.png"))
         if "The Full Slate" in paper:  # fallback template ran — AI didn't
             reason = _last_ai_error or "unknown (no material to write from)"
             return f"preseason posted, but the AI edition didn't run — reason: {reason}"
-        return "preseason edition posted to #league-news"
+        return "preseason edition posted to #league-news" + ("" if img else " (no graphic — check logs)")
 
     async def do_advance(guild: discord.Guild, force: bool) -> str:
         """Post last week's recap (from scores) + the next week's matchups. Returns a status line."""
@@ -796,6 +839,9 @@ def main() -> None:
         if news_ch is not None:
             paper = await build_newspaper(guild, last_week, last_time, next_week, next_games)
             await send_paper(news_ch, paper)
+            img = await ai_dispatch_image(paper, f"Week {last_week}")
+            if img:
+                await news_ch.send(file=discord.File(io.BytesIO(img), filename=f"dispatch-week-{last_week}.png"))
 
         if not upcoming:
             return f"posted Week {last_week} recap — season complete, no more weeks"
