@@ -48,10 +48,9 @@ def main() -> None:
                 send_messages_in_threads=False,
                 create_public_threads=False,
                 create_private_threads=False,
-                add_reactions=False,
                 speak=False,
                 send_voice_messages=False,
-            )
+            )  # reactions intentionally left allowed
             locked = 0
             for channel in guild.channels:
                 try:
