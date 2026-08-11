@@ -328,13 +328,16 @@ def main() -> None:
             if avail_ch is not None:
                 await sync_channel(avail_ch, build_available_blocks(guild))
 
-    def coach_for_team(guild: discord.Guild, team: str) -> discord.Member | None:
-        """Find the coach whose nickname claims `team` (so we can @tag them)."""
+    def team_tag(guild: discord.Guild, team: str) -> str:
+        """Display for a team in a matchup: coach @mention, else reserved owner, else bold name."""
         target = normalize(team)
-        for m in coach_members(guild):
+        for m in coach_members(guild):  # 1. a coach whose nickname is this team
             if resolve_team(m.display_name) == target:
-                return m
-        return None
+                return m.mention
+        for rteam, owner in reserved.items():  # 2. a reserved owner for this team
+            if normalize(rteam) == target:
+                return owner_to_display(guild, owner)
+        return f"**{team}**"  # 3. nobody claims it yet
 
     async def post_week(guild: discord.Guild, channel: discord.TextChannel, week: int, games: list) -> None:
         lines = [
@@ -345,13 +348,13 @@ def main() -> None:
         ]
         for game in games:
             home, away = game[0], game[1]
-            hm, am = coach_for_team(guild, home), coach_for_team(guild, away)
-            h = hm.mention if hm else f"**{home}**"
-            a = am.mention if am else f"**{away}**"
-            lines.append(f"• {a} ({away})  @  {h} ({home})")
+            lines.append(f"• {team_tag(guild, away)} ({away})  @  {team_tag(guild, home)} ({home})")
         if len(games) == 0:
             lines.append("*No user-vs-user games this week.*")
-        allowed = discord.AllowedMentions.none() if QUIET_MODE else discord.AllowedMentions(users=True)
+        allowed = (
+            discord.AllowedMentions.none() if QUIET_MODE
+            else discord.AllowedMentions(users=True, roles=True)
+        )
         await channel.send("\n".join(lines), allowed_mentions=allowed)
 
     @tasks.loop(hours=3)
