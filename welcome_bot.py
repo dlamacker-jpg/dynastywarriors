@@ -257,15 +257,19 @@ def main() -> None:
         """
         holders: dict[str, list[tuple[str, str]]] = {}  # norm -> [(school, owner), ...]
         unset = []
-        for m in coach_members(guild):
-            # display_name = server nickname, else account display name, else username.
+        coach_role = discord.utils.get(guild.roles, name=ROLE_ON_JOIN) if ROLE_ON_JOIN else None
+        for m in guild.members:
+            if m.bot:
+                continue
+            # Anyone whose nickname resolves to a team counts — the Coach role is NOT required.
             tn = resolve_team(m.display_name)
             if tn is not None:
                 holders.setdefault(tn, []).append((team_by_norm[tn], m.mention))
-            else:
-                unset.append(m.mention)
+            elif coach_role is not None and coach_role in m.roles:
+                unset.append(m.mention)  # has the Coach role but hasn't set a team nickname
         for team, owner in reserved.items():
-            holders.setdefault(base_norm(team), []).append((team, owner_to_display(guild, owner)))
+            if base_norm(team) not in holders:  # a real member's nickname wins over the reserved entry
+                holders.setdefault(base_norm(team), []).append((team, owner_to_display(guild, owner)))
 
         taken, conflicts = [], []
         for entries in holders.values():
@@ -349,8 +353,8 @@ def main() -> None:
     def team_tag(guild: discord.Guild, team: str) -> str:
         """Display for a team in a matchup: coach @mention, else reserved owner, else bold name."""
         target = normalize(team)
-        for m in coach_members(guild):  # 1. a coach whose nickname is this team
-            if resolve_team(m.display_name) == target:
+        for m in guild.members:  # 1. any member whose nickname is this team (role not required)
+            if not m.bot and resolve_team(m.display_name) == target:
                 return m.mention
         for rteam, owner in reserved.items():  # 2. a reserved owner for this team
             if normalize(rteam) == target:
