@@ -16,3 +16,4 @@ __pycache__/
 # runtime state
 standings.json
 sample_card.png
+dispatch_out.html

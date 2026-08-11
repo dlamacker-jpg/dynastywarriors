@@ -51,6 +51,11 @@ try:
 except Exception:
     card = None
 
+try:
+    import dispatch_render  # HTML newspaper template + headless-Chromium render
+except Exception:
+    dispatch_render = None
+
 import standings  # season W/L tracker (pure stdlib — safe to import unconditionally)
 
 RECAP_MODEL = "claude-opus-5"    # Claude vision model that reads the box-score photos
@@ -484,6 +489,94 @@ async def make_matchup_graphic(week, games: list, context: str) -> bytes | None:
     except Exception as exc:
         print(f"Card render failed: {exc}")
         return None
+
+
+PAPER_SCHEMA = """{
+ "headline": "<4-7 word front-page headline>",
+ "kicker": "<3-5 word eyebrow above the headline>",
+ "dek": "<1-2 sentence standfirst; may bold **teams** with markdown-style ** **>",
+ "results": [{"winner": "<team>", "loser": "<team>"}],
+ "power_rankings": [{"team": "<team>", "conf": "<SEC|Big Ten|ACC>", "blurb": "<one witty line>"}],
+ "storylines": [{"title": "<label>", "body": "<1-2 sentences>"}],
+ "cfp_watch": [{"title": "<label>", "body": "<1-2 sentences>"}],
+ "top25": [{"rk": 1, "team": "<team>", "rec": "<from standings or 0-0>"}],
+ "heisman": [{"name": "<player>", "tag": "<POS · TEAM>", "note": "<short>"}],
+ "recruiting": [{"title": "<label>", "body": "<1-2 sentences>"}],
+ "line": [{"game": "<Away at Home>", "loc": "<stadium/city>", "odds": "<TEAM -X.X>"}],
+ "media_quote": "<one editorial sign-off line>"
+}"""
+
+
+async def ai_paper(week_label: str, matchups: list, next_matchups: list, standings_summary: str,
+                   banter: str, images: list, recruit_images: list, heisman_images: list) -> tuple:
+    """Build the full newspaper as structured JSON (+ results for standings). (dict|None, results)."""
+    global _last_ai_error
+    if anthropic is None:
+        _last_ai_error = "anthropic library not installed on the host"
+        return None, []
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        _last_ai_error = "ANTHROPIC_API_KEY not set in the running process"
+        return None, []
+    content: list = []
+    if images:
+        content.append({"type": "text", "text": "=== BOX-SCORE PHOTOS (real game results — read scores) ==="})
+        content += [_img_block(mt, d) for mt, d in images]
+    if recruit_images:
+        content.append({"type": "text", "text": "=== RECRUITING SCREENSHOTS ==="})
+        content += [_img_block(mt, d) for mt, d in recruit_images]
+    if heisman_images:
+        content.append({"type": "text", "text": "=== HEISMAN / STAT SCREENSHOTS ==="})
+        content += [_img_block(mt, d) for mt, d in heisman_images]
+    this_slate = "\n".join(f"- {a} at {h}" for h, a in matchups) or "(none)"
+    next_slate = "\n".join(f"- {a} at {h}" for h, a in next_matchups) or "(none)"
+    content.append({"type": "text", "text": (
+        f"You are the editor of THE DYNASTY DISPATCH ({week_label}), a gritty broadsheet for a College "
+        "Football 27 online dynasty (20 user-coached teams across the SEC, Big Ten, and ACC). Produce the "
+        "front page as STRICT JSON matching this schema (no prose, no code fences):\n" + PAPER_SCHEMA +
+        f"\n\nTHIS WEEK's user matchups:\n{this_slate}\n\nNEXT WEEK's user matchups (for The Line):\n{next_slate}"
+        f"\n\nCurrent standings (authoritative — use verbatim for records):\n{standings_summary or '(0-0 across the board)'}"
+        f"\n\nCoach chat this week (for tone/quotes only):\n{banter[:1500] or '(none)'}\n\n"
+        "HARD RULES:\n"
+        "• NEVER invent a final score, a win/loss record, a stat, a commit, or a Heisman name. Results come "
+        "ONLY from the box-score photos; records come ONLY from the standings above; recruiting and heisman "
+        "come ONLY from those screenshots. If a source isn't provided, return an EMPTY list for that section.\n"
+        "• 'results' = only games you can actually read a final score for in the photos (winner/loser by exact "
+        "team name). Empty list if none.\n"
+        "• power_rankings, cfp_watch, storylines, top25 order, and line are EDITORIAL opinion/prediction — allowed, "
+        "but they must not state any fabricated final score or record. Rank the 20 user teams; 8-10 power_rankings, "
+        "up to 25 top25 (fill 'rec' from standings, else 0-0).\n"
+        "• 'line' previews NEXT WEEK's games only, from the slate above.\n"
+        "• Keep every blurb tight. Output ONLY the JSON object."
+    )})
+    try:
+        client = anthropic.AsyncAnthropic()
+        msg = await client.messages.create(
+            model=RECAP_MODEL, max_tokens=6000, messages=[{"role": "user", "content": content}]
+        )
+        if msg.stop_reason == "refusal":
+            _last_ai_error = "model refused"
+            return None, []
+        raw = "".join(b.text for b in msg.content if b.type == "text")
+        m = re.search(r"\{.*\}", raw, re.S)
+        if not m:
+            _last_ai_error = "no JSON in paper response"
+            return None, []
+        data = json.loads(m.group(0))
+        _last_ai_error = ""
+        return data, data.get("results", []) or []
+    except Exception as exc:
+        _last_ai_error = f"paper API error: {type(exc).__name__}: {exc}"
+        print(f"AI paper failed: {exc}")
+        return None, []
+
+
+def _dek_html(s: str) -> str:
+    """Render **bold** markdown to <b> for the dek, escaping the rest."""
+    import html as _h
+    out, i = [], 0
+    for j, part in enumerate(str(s).split("**")):
+        out.append(f"<b>{_h.escape(part)}</b>" if j % 2 else _h.escape(part))
+    return "".join(out)
 
 
 def main() -> None:
@@ -931,22 +1024,112 @@ def main() -> None:
         for chunk in chunks:
             await channel.send(chunk, allowed_mentions=discord.AllowedMentions.none())
 
+    def user_team_list() -> list:
+        teams = set()
+        for games in load_schedule().values():
+            if isinstance(games, list):
+                for pair in games:
+                    teams.update(pair)
+        return sorted(teams)
+
+    async def gather_media(guild: discord.Guild, since):
+        """Collect box-score/recruiting/heisman images + chat banter for the paper."""
+        async def imgs(channel_name, cap, use_since):
+            ch = discord.utils.get(guild.text_channels, name=channel_name)
+            out = []
+            if ch is None:
+                return out
+            it = ch.history(limit=300, after=since) if use_since else ch.history(limit=200)
+            async for m in it:
+                for att in m.attachments:
+                    if _is_image(att) and len(out) < cap:
+                        try:
+                            out.append((_img_media_type(att), await att.read()))
+                        except Exception:
+                            pass
+            return out
+        images = await imgs(SCORES_CHANNEL, 12, since is not None)
+        recruit = await imgs(RECRUITING_CHANNEL, 8, False)
+        heis = await imgs(HEISMAN_CHANNEL, 6, False)
+        lines = []
+        for cname in TRASH_CHANNELS:
+            ch = discord.utils.get(guild.text_channels, name=cname)
+            if ch is None:
+                continue
+            async for m in ch.history(limit=200, after=since):
+                if m.author.bot:
+                    continue
+                txt = " ".join(m.content.split())
+                if 3 <= len(txt) <= 300:
+                    lines.append(f"{m.author.display_name}: {txt}")
+        return images, recruit, heis, "\n".join(lines[-80:])
+
+    async def build_dispatch_image(guild: discord.Guild, week, this_games, next_games, since):
+        """Render the full broadcast newspaper PNG. Returns (png|None, data|None, results)."""
+        if dispatch_render is None:
+            return None, None, []
+        images, recruit, heis, banter = await gather_media(guild, since)
+        tl = user_team_list()
+        summary = "\n".join(f"{t}: {standings.record_str(t) or '0-0'}" for t in tl)
+        wl = f"Week {week}" if str(week).strip() not in ("", "Preseason") else "Preseason"
+        data, results = await ai_paper(wl, this_games, next_games, summary, banter, images, recruit, heis)
+        if not data:
+            return None, None, results
+        if results and str(week).strip() not in ("", "Preseason"):
+            standings.record_week(int(week), results)
+        data["week_label"] = wl
+        data["dek_html"] = _dek_html(data.get("dek", ""))
+        for key in ("storylines", "cfp_watch", "recruiting"):
+            for item in (data.get(key) or []):
+                if isinstance(item, dict) and item.get("body"):
+                    item["body_html"] = _dek_html(item["body"])
+        data["standings"] = [{"team": t, "rating": "—", "rec": standings.record_str(t) or "0–0"} for t in tl]
+        try:
+            png = await dispatch_render.html_to_png(dispatch_render.build_html(data))
+        except Exception as exc:
+            print(f"Dispatch build_html/render failed: {exc}")
+            png = None
+        return png, data, results
+
+    def data_to_text(data: dict, week_label: str) -> str:
+        """Compact markdown fallback built from the paper data (no extra AI call)."""
+        L = [f"# 📰 The Dynasty Dispatch — {week_label}"]
+        if data.get("headline"):
+            L.append(f"*{data['headline']}*")
+        res = data.get("results") or []
+        if res:
+            L.append("\n## 🏈 On the Field")
+            L += [f"• **{r.get('winner')}** def. {r.get('loser')}" for r in res if r.get("winner")]
+        for title, key in (("📈 Recruiting Trail", "recruiting"), ("🍿 Storylines", "storylines")):
+            items = data.get(key) or []
+            if items:
+                L.append(f"\n## {title}")
+                L += [f"• {i.get('body','')}" for i in items[:4]]
+        hz = data.get("heisman") or []
+        if hz:
+            L.append("\n## 🏆 Heisman Watch")
+            L += [f"{n+1}. **{h.get('name')}** — {h.get('tag','')}" for n, h in enumerate(hz[:4])]
+        return "\n".join(L)
+
     async def do_preseason(guild: discord.Guild) -> str:
         news_ch = discord.utils.get(guild.text_channels, name=NEWS_CHANNEL)
         if news_ch is None:
             return "no #league-news channel"
-        paper = await build_preseason(guild)
-        await send_paper(news_ch, paper)
         schedule = load_schedule()
         weeks = sorted(int(w) for w in schedule if w.isdigit())
         opener_games = schedule[str(weeks[0])] if weeks else []
-        png = await make_matchup_graphic("Preseason", opener_games, paper)
+        png, data, _ = await build_dispatch_image(guild, "Preseason", [], opener_games, None)
         if png:
             await news_ch.send(file=discord.File(io.BytesIO(png), filename="dispatch-preseason.png"))
-        if "The Full Slate" in paper:  # fallback template ran — AI didn't
-            reason = _last_ai_error or "unknown (no material to write from)"
-            return f"preseason posted, but the AI edition didn't run — reason: {reason}"
-        return "preseason edition posted to #league-news" + ("" if png else " (no graphic — check logs)")
+            return "preseason newspaper posted to #league-news"
+        # fallbacks: text paper + matchup card
+        paper = await build_preseason(guild)
+        await send_paper(news_ch, paper)
+        card_png = await make_matchup_graphic("Preseason", opener_games, paper)
+        if card_png:
+            await news_ch.send(file=discord.File(io.BytesIO(card_png), filename="dispatch-preseason.png"))
+        reason = _last_ai_error or "no material"
+        return f"preseason posted (text fallback — newspaper render didn't run: {reason})"
 
     async def do_advance(guild: discord.Guild, force: bool) -> str:
         """Post last week's recap (from scores) + the next week's matchups. Returns a status line."""
@@ -980,14 +1163,23 @@ def main() -> None:
 
         news_ch = discord.utils.get(guild.text_channels, name=NEWS_CHANNEL)
         if news_ch is not None:
-            paper, results = await build_newspaper(guild, last_week, last_time, next_week, next_games)
-            if results:
-                standings.record_week(last_week, results)  # idempotent per week
-            await send_paper(news_ch, paper)
-            if next_games:  # Game-of-the-Week card previews the upcoming slate
-                png = await make_matchup_graphic(next_week, next_games, paper)
-                if png:
-                    await news_ch.send(file=discord.File(io.BytesIO(png), filename=f"gotw-week-{next_week}.png"))
+            last_games = schedule.get(str(last_week), [])
+            # Primary: the full broadcast newspaper image.
+            png, data, _ = await build_dispatch_image(guild, last_week, last_games, next_games, last_time)
+            if png:
+                await news_ch.send(file=discord.File(io.BytesIO(png), filename=f"dispatch-week-{last_week}.png"))
+                if data:  # short accessible text companion, built from the same data (no extra AI call)
+                    await send_paper(news_ch, data_to_text(data, f"Week {last_week}"))
+            else:
+                # Fallback: text recap + Game-of-the-Week card.
+                paper, results = await build_newspaper(guild, last_week, last_time, next_week, next_games)
+                if results:
+                    standings.record_week(last_week, results)
+                await send_paper(news_ch, paper)
+                if next_games:
+                    gcard = await make_matchup_graphic(next_week, next_games, paper)
+                    if gcard:
+                        await news_ch.send(file=discord.File(io.BytesIO(gcard), filename=f"gotw-week-{next_week}.png"))
 
         await clear_game_rooms(guild)  # last week's coordination rooms expire
         if not upcoming:
