@@ -178,6 +178,9 @@ def pack(items: list[str], limit: int = 1900) -> list[str]:
     return blocks
 
 
+_last_ai_error = ""  # human-readable reason the last AI recap/preseason call didn't produce text
+
+
 def _is_image(att) -> bool:
     """True if a Discord attachment is an image — by content_type OR filename (content_type can be None)."""
     ct = (att.content_type or "").lower()
@@ -291,14 +294,18 @@ async def ai_preseason(recruit_images: list, heisman_images: list, banter: str,
 
     `season` is an ordered list of (week:int, games:list[[home, away]]).
     """
+    global _last_ai_error
     if anthropic is None:
-        print("AI preseason skipped: anthropic library not importable (check requirements install).")
+        _last_ai_error = "anthropic library not installed on the host (requirements didn't build)"
+        print(f"AI preseason skipped: {_last_ai_error}")
         return None
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("AI preseason skipped: ANTHROPIC_API_KEY not set in this environment.")
+        _last_ai_error = "ANTHROPIC_API_KEY not set in the running process"
+        print(f"AI preseason skipped: {_last_ai_error}")
         return None
     if not (recruit_images or heisman_images or banter or season):
         return None
+    _last_ai_error = ""
     print(f"AI preseason: {len(recruit_images)} recruiting img, {len(heisman_images)} heisman img, "
           f"{len(banter.splitlines())} chat lines, {len(season)} weeks.")
     content: list = []
@@ -356,6 +363,7 @@ async def ai_preseason(recruit_images: list, heisman_images: list, banter: str,
         text = "".join(b.text for b in msg.content if b.type == "text").strip()
         return text or None
     except Exception as exc:
+        _last_ai_error = f"API error: {type(exc).__name__}: {exc}"
         print(f"AI preseason failed: {exc}")
         return None
 
@@ -752,8 +760,8 @@ def main() -> None:
         paper = await build_preseason(guild)
         await send_paper(news_ch, paper)
         if "The Full Slate" in paper:  # fallback template ran — AI didn't
-            return ("preseason posted, but the AI edition didn't run (no ANTHROPIC_API_KEY, "
-                    "missing anthropic lib, or an API error). Check the Railway logs.")
+            reason = _last_ai_error or "unknown (no material to write from)"
+            return f"preseason posted, but the AI edition didn't run — reason: {reason}"
         return "preseason edition posted to #league-news"
 
     async def do_advance(guild: discord.Guild, force: bool) -> str:
