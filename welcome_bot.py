@@ -178,6 +178,30 @@ def pack(items: list[str], limit: int = 1900) -> list[str]:
     return blocks
 
 
+def _is_image(att) -> bool:
+    """True if a Discord attachment is an image — by content_type OR filename (content_type can be None)."""
+    ct = (att.content_type or "").lower()
+    if ct.startswith("image/"):
+        return True
+    name = (att.filename or "").lower()
+    # Only formats Claude vision accepts (png/jpeg/webp/gif) — HEIC/others would be rejected.
+    return name.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+
+
+def _img_media_type(att) -> str:
+    ct = (att.content_type or "").lower()
+    if ct.startswith("image/"):
+        return ct.split(";")[0]
+    name = (att.filename or "").lower()
+    if name.endswith((".jpg", ".jpeg")):
+        return "image/jpeg"
+    if name.endswith(".webp"):
+        return "image/webp"
+    if name.endswith(".gif"):
+        return "image/gif"
+    return "image/png"  # default; Claude vision accepts png/jpeg/webp/gif
+
+
 def _img_block(media_type: str, data: bytes) -> dict:
     return {
         "type": "image",
@@ -585,9 +609,9 @@ def main() -> None:
                 return out
             async for m in ch.history(limit=300, after=since):
                 for att in m.attachments:
-                    if att.content_type and att.content_type.startswith("image/") and len(out) < cap:
+                    if _is_image(att) and len(out) < cap:
                         try:
-                            out.append((att.content_type, await att.read()))
+                            out.append((_img_media_type(att), await att.read()))
                         except Exception:
                             pass
             return out
@@ -595,9 +619,9 @@ def main() -> None:
         images = []
         for m in reports:
             for att in m.attachments:
-                if att.content_type and att.content_type.startswith("image/") and len(images) < 12:
+                if _is_image(att) and len(images) < 12:
                     try:
-                        images.append((att.content_type, await att.read()))
+                        images.append((_img_media_type(att), await att.read()))
                     except Exception:
                         pass
         recruit_images = await collect_images(RECRUITING_CHANNEL, 8)
@@ -658,9 +682,9 @@ def main() -> None:
                 return out
             async for m in ch.history(limit=200):
                 for att in m.attachments:
-                    if att.content_type and att.content_type.startswith("image/") and len(out) < cap:
+                    if _is_image(att) and len(out) < cap:
                         try:
-                            out.append((att.content_type, await att.read()))
+                            out.append((_img_media_type(att), await att.read()))
                         except Exception:
                             pass
             return out
