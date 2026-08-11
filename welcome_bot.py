@@ -399,7 +399,7 @@ async def ai_dispatch_image(dispatch_text: str, week_label: str) -> bytes | None
     try:
         client = openai.AsyncOpenAI()
         res = await client.images.generate(
-            model=IMAGE_MODEL, prompt=prompt, size="1536x1024", quality="medium", n=1
+            model=IMAGE_MODEL, prompt=prompt, size="1536x1024", quality="high", n=1
         )
         return base64.b64decode(res.data[0].b64_json)
     except Exception as exc:
