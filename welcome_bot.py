@@ -23,6 +23,7 @@ Requirements:
 """
 
 import asyncio
+import base64
 import json
 import os
 import random
@@ -33,6 +34,13 @@ from pathlib import Path
 
 import discord
 from discord.ext import tasks
+
+try:
+    import anthropic  # optional: enables AI box-score recaps in #league-news
+except ImportError:
+    anthropic = None
+
+RECAP_MODEL = "claude-opus-5"  # Claude vision model that reads the box-score photos
 
 WELCOME_CHANNEL = "newbies"
 ROLE_ON_JOIN = "Coach"           # set to None to disable auto-role; also the role counted on the boards
@@ -165,6 +173,50 @@ def pack(items: list[str], limit: int = 1900) -> list[str]:
     if cur:
         blocks.append(cur)
     return blocks
+
+
+async def ai_recap(week: int, games: list, images: list) -> str | None:
+    """Send box-score photos to Claude (vision) and get back a written recap, or None."""
+    if anthropic is None or not os.environ.get("ANTHROPIC_API_KEY") or not images:
+        return None
+    content = [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": media_type,
+                "data": base64.standard_b64encode(data).decode(),
+            },
+        }
+        for media_type, data in images
+    ]
+    matchups = "\n".join(f"- {a} at {h}" for h, a in games) or "(none)"
+    content.append({
+        "type": "text",
+        "text": (
+            "You are the beat writer for 'The Dynasty Dispatch', the newspaper of a College Football 27 "
+            f"online dynasty. The attached photos are box scores (often phone photos of a TV) from Week {week}. "
+            f"This week's user-vs-user matchups are:\n{matchups}\n\n"
+            "Read each box score, match it to one of the matchups above, and write a short, lively recap. "
+            f"Format as Discord markdown starting with the line '# 📰 The Dynasty Dispatch — Week {week}'. "
+            "For each game you can read: one bullet with the winner in **bold**, the final score, and one "
+            "sentence of color using real stats from the box score (yards, turnovers, big plays). Keep the whole "
+            "thing under 1800 characters. List any listed matchup with no readable box score under a short "
+            "'Still to report' line. Only cover the matchups listed above."
+        ),
+    })
+    try:
+        client = anthropic.AsyncAnthropic()
+        msg = await client.messages.create(
+            model=RECAP_MODEL, max_tokens=4000, messages=[{"role": "user", "content": content}]
+        )
+        if msg.stop_reason == "refusal":
+            return None
+        text = "".join(b.text for b in msg.content if b.type == "text").strip()
+        return text or None
+    except Exception as exc:  # network / auth / rate limit — fall back to the text recap
+        print(f"AI recap failed: {exc}")
+        return None
 
 
 def main() -> None:
@@ -411,6 +463,20 @@ def main() -> None:
         if scores_ch is not None:
             reports = [m async for m in scores_ch.history(limit=300, after=since)]
         games = load_schedule().get(str(week), [])
+
+        # Preferred path: let Claude read the box-score photos and write the recap.
+        images = []
+        for m in reports:
+            for att in m.attachments:
+                if att.content_type and att.content_type.startswith("image/") and len(images) < 12:
+                    try:
+                        images.append((att.content_type, await att.read()))
+                    except Exception:
+                        pass
+        ai = await ai_recap(week, games, images)
+        if ai:
+            return ai
+        # Fallback: parse text score lines from #score-reporting.
         done, pending = [], []
         for home, away in games:
             res = next((r for m in reports if (r := parse_result(m.content, home, away))), None)
