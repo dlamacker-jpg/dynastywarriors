@@ -43,9 +43,13 @@ ACTIVE_CHECK_CHANNEL = "active-checks"    # where the active check is posted
 ACTIVE_CHECK_DAYS = 3                     # how often it goes out
 ACTIVE_CHECK_EMOJI = "👍"                  # reaction coaches use to confirm
 ACTIVE_CHECK_MARKER = "🚨 ACTIVE CHECK"    # used to find the previous check
+MATCHUPS_CHANNEL = "user-game-coordination"  # where weekly user games are posted
+ADVANCE_HOURS = 48                           # post the next week every 48h (the force-advance cadence)
+MATCHUPS_MARKER = "🏈 Week"                    # used to find the last posted week
 TEAMS_FILE = Path(__file__).with_name("teams_fbs.json")
 RESERVED_FILE = Path(__file__).with_name("reserved.json")
 ALIASES_FILE = Path(__file__).with_name("aliases.json")
+SCHEDULE_FILE = Path(__file__).with_name("schedule.json")
 
 # Common shorthand -> official name (both get normalized before comparing).
 ALIASES = {
@@ -118,6 +122,15 @@ def load_reserved() -> dict[str, str]:
     if not RESERVED_FILE.exists():
         return {}
     with RESERVED_FILE.open(encoding="utf-8") as f:
+        data = json.load(f)
+    return {k: v for k, v in data.items() if not k.startswith("_")}
+
+
+def load_schedule() -> dict[str, list]:
+    """Season schedule: {week: [[home, away], ...]} of user-vs-user games. Missing = none."""
+    if not SCHEDULE_FILE.exists():
+        return {}
+    with SCHEDULE_FILE.open(encoding="utf-8") as f:
         data = json.load(f)
     return {k: v for k, v in data.items() if not k.startswith("_")}
 
@@ -314,6 +327,61 @@ def main() -> None:
             if avail_ch is not None:
                 await sync_channel(avail_ch, build_available_blocks(guild))
 
+    def coach_for_team(guild: discord.Guild, team: str) -> discord.Member | None:
+        """Find the coach whose nickname claims `team` (so we can @tag them)."""
+        target = normalize(team)
+        for m in coach_members(guild):
+            if resolve_team(m.display_name) == target:
+                return m
+        return None
+
+    async def post_week(guild: discord.Guild, channel: discord.TextChannel, week: int, games: list) -> None:
+        lines = [
+            f"{MATCHUPS_MARKER} {week} — User Games 🏈",
+            f"Get your games in within {ADVANCE_HOURS} hours. @ your opponent to schedule, "
+            "report in #score-reporting, and 👍 the active check.",
+            "",
+        ]
+        for game in games:
+            home, away = game[0], game[1]
+            hm, am = coach_for_team(guild, home), coach_for_team(guild, away)
+            h = hm.mention if hm else f"**{home}**"
+            a = am.mention if am else f"**{away}**"
+            lines.append(f"• {a} ({away})  @  {h} ({home})")
+        if len(games) == 0:
+            lines.append("*No user-vs-user games this week.*")
+        await channel.send("\n".join(lines), allowed_mentions=discord.AllowedMentions(users=True))
+
+    @tasks.loop(hours=3)
+    async def advance_loop() -> None:
+        """Post the next week's matchups once 48h have passed since the last week's post."""
+        schedule = load_schedule()
+        weeks = sorted(int(w) for w in schedule if w.isdigit())
+        if not weeks:
+            return
+        for guild in client.guilds:
+            channel = discord.utils.get(guild.text_channels, name=MATCHUPS_CHANNEL)
+            if channel is None:
+                continue
+            last_week, last_time = 0, None
+            async for m in channel.history(limit=100):
+                if m.author.id == client.user.id and m.content.startswith(MATCHUPS_MARKER):
+                    mt = re.match(rf"{re.escape(MATCHUPS_MARKER)} (\d+)", m.content)
+                    if mt:
+                        last_week, last_time = int(mt.group(1)), m.created_at
+                        break
+            if last_week == 0:
+                next_week = weeks[0]  # season kickoff: post the first week
+            else:
+                if last_time and (discord.utils.utcnow() - last_time).total_seconds() < ADVANCE_HOURS * 3600:
+                    continue
+                upcoming = [w for w in weeks if w > last_week]
+                if not upcoming:
+                    continue  # season complete
+                next_week = upcoming[0]
+            await post_week(guild, channel, next_week, schedule[str(next_week)])
+            print(f"Posted Week {next_week} matchups in #{MATCHUPS_CHANNEL} ({guild.name}).")
+
     @tasks.loop(hours=6)
     async def active_check_loop() -> None:
         """Post an active check if the last one is older than ACTIVE_CHECK_DAYS.
@@ -351,6 +419,8 @@ def main() -> None:
             await refresh_all(guild)
         if not active_check_loop.is_running():
             active_check_loop.start()
+        if not advance_loop.is_running():
+            advance_loop.start()
 
     @client.event
     async def on_member_join(member: discord.Member) -> None:

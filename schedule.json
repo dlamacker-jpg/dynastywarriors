@@ -1,0 +1,4 @@
+{
+  "_comment": "Season schedule of USER-vs-USER games, keyed by week number (string). Each game is [home_team, away_team], both teams controlled by coaches. The bot posts each week's matchups in #user-game-coordination on the 48-hour advance cadence and tags both coaches. Leave empty until the schedule is set. Example: \"1\": [[\"Ohio State\", \"LSU\"], [\"Texas\", \"Oregon\"]]",
+  "_weeks": {}
+}
