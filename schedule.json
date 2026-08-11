@@ -2,7 +2,7 @@
   "_comment": "Season schedule of USER-vs-USER games, keyed by week (string). Each game is [home_team, away_team]. Compiled from team schedule screenshots + reschedules. The bot posts each week's matchups in #user-game-coordination on the 48h advance cadence and @tags both coaches. Complete: all 20 user teams' schedules reconciled from screenshots.",
   "0": [["Oklahoma", "Florida State"], ["USC", "Texas A&M"], ["Florida", "Michigan"]],
   "1": [["Ohio State", "LSU"], ["Oklahoma", "Iowa"], ["Oregon", "Texas"], ["Penn State", "Alabama"], ["Michigan", "South Carolina"], ["USC", "Florida"], ["Texas A&M", "Clemson"]],
-  "2": [["Texas", "Ohio State"], ["South Carolina", "Miami"], ["Duke", "Michigan"], ["Georgia", "Oregon"], ["LSU", "Clemson"]],
+  "2": [["Texas", "Ohio State"], ["Duke", "Michigan"], ["Georgia", "Oregon"], ["LSU", "Clemson"], ["Penn State", "Miami"]],
   "3": [["LSU", "Ole Miss"], ["Notre Dame", "Penn State"], ["Alabama", "Florida State"], ["Iowa", "Texas"]],
   "4": [["Oklahoma", "Georgia"], ["Duke", "Ole Miss"], ["USC", "Oregon"], ["South Carolina", "Alabama"], ["Texas A&M", "LSU"], ["Florida", "Notre Dame"], ["Michigan", "Iowa"]],
   "5": [["Iowa", "Ohio State"], ["Ole Miss", "Alabama"], ["Georgia", "Texas A&M"], ["LSU", "Duke"], ["Clemson", "Miami"]],
