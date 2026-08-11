@@ -291,10 +291,16 @@ async def ai_preseason(recruit_images: list, heisman_images: list, banter: str,
 
     `season` is an ordered list of (week:int, games:list[[home, away]]).
     """
-    if anthropic is None or not os.environ.get("ANTHROPIC_API_KEY"):
+    if anthropic is None:
+        print("AI preseason skipped: anthropic library not importable (check requirements install).")
+        return None
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("AI preseason skipped: ANTHROPIC_API_KEY not set in this environment.")
         return None
     if not (recruit_images or heisman_images or banter or season):
         return None
+    print(f"AI preseason: {len(recruit_images)} recruiting img, {len(heisman_images)} heisman img, "
+          f"{len(banter.splitlines())} chat lines, {len(season)} weeks.")
     content: list = []
     if recruit_images:
         content.append({"type": "text", "text": "=== RECRUITING SCREENSHOTS (classes, commits, portal) ==="})
@@ -745,6 +751,9 @@ def main() -> None:
             return "no #league-news channel"
         paper = await build_preseason(guild)
         await send_paper(news_ch, paper)
+        if "The Full Slate" in paper:  # fallback template ran — AI didn't
+            return ("preseason posted, but the AI edition didn't run (no ANTHROPIC_API_KEY, "
+                    "missing anthropic lib, or an API error). Check the Railway logs.")
         return "preseason edition posted to #league-news"
 
     async def do_advance(guild: discord.Guild, force: bool) -> str:
