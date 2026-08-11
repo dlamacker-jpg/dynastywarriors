@@ -27,6 +27,7 @@
         { "name": "general",                "type": "text" },
         { "name": "active-checks",           "type": "text", "topic": "Every 3 days: 👍 the active check to confirm you're still in. Rule #6." },
         { "name": "user-game-coordination", "type": "text", "topic": "Arrange your user-vs-user games." },
+        { "name": "score-reporting",        "type": "text", "topic": "Post final scores + a box-score screenshot after each user game." },
         { "name": "streaming",              "type": "text", "topic": "Drop your stream links when you're live." },
         { "name": "schedule-request",       "type": "text", "topic": "Request scheduling changes / makeup games." },
         { "name": "highlight-tapes",        "type": "text", "topic": "Post your best clips." },
