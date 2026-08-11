@@ -12,3 +12,7 @@ __pycache__/
 # macOS metadata (common on external drives)
 ._*
 .DS_Store
+
+# runtime state
+standings.json
+sample_card.png

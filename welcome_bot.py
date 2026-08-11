@@ -42,9 +42,16 @@ except ImportError:
     anthropic = None
 
 try:
-    import openai  # optional: enables the ChatGPT-rendered Dispatch graphic
+    import openai  # optional: enables the AI-generated background for the Dispatch graphic
 except ImportError:
     openai = None
+
+try:
+    import card  # Pillow compositor: stamps exact matchup data over the background
+except Exception:
+    card = None
+
+import standings  # season W/L tracker (pure stdlib — safe to import unconditionally)
 
 RECAP_MODEL = "claude-opus-5"    # Claude vision model that reads the box-score photos
 IMAGE_MODEL = "gpt-image-1"      # OpenAI image model that renders the Dispatch graphic
@@ -225,15 +232,15 @@ def _img_block(media_type: str, data: bytes) -> dict:
 
 async def ai_recap(week: int, games: list, images: list, recruit_images: list | None = None,
                    heisman_images: list | None = None, banter: str = "",
-                   next_week: int | None = None, next_games: list | None = None) -> str | None:
-    """Send box-score / recruiting / Heisman photos (+ chat banter) to Claude for a recap, or None."""
+                   next_week: int | None = None, next_games: list | None = None) -> tuple:
+    """Send photos (+ banter) to Claude; return (recap_markdown | None, results_list)."""
     recruit_images = recruit_images or []
     heisman_images = heisman_images or []
     next_games = next_games or []
     if anthropic is None or not os.environ.get("ANTHROPIC_API_KEY"):
-        return None
+        return None, []
     if not (images or recruit_images or heisman_images or banter):
-        return None
+        return None, []
     content: list = []
     if images:
         content.append({"type": "text", "text": "=== BOX-SCORE PHOTOS (game results) ==="})
@@ -278,7 +285,11 @@ async def ai_recap(week: int, games: list, images: list, recruit_images: list | 
             "header previewing the 2-3 biggest games of that upcoming week (bold both teams, one line of hype each — "
             "lean on marquee programs, rivalries, and how teams looked this week). Only use the next-week games "
             "listed. Omit if no next-week slate was provided.\n"
-            "Keep the whole thing under 1900 characters."
+            "Keep the recap under 1900 characters.\n\n"
+            "AFTER the recap, on its own final line output the exact marker <<<RESULTS>>> followed by a JSON "
+            "array of the games you could actually read a final score for, each object "
+            '{"winner": <team>, "loser": <team>} using the EXACT team names from the matchup list. Omit games '
+            "you could not read. This machine-readable block is used for standings and won't be shown to readers."
         ),
     })
     try:
@@ -287,12 +298,22 @@ async def ai_recap(week: int, games: list, images: list, recruit_images: list | 
             model=RECAP_MODEL, max_tokens=4000, messages=[{"role": "user", "content": content}]
         )
         if msg.stop_reason == "refusal":
-            return None
-        text = "".join(b.text for b in msg.content if b.type == "text").strip()
-        return text or None
+            return None, []
+        raw = "".join(b.text for b in msg.content if b.type == "text").strip()
+        text, results = raw, []
+        if "<<<RESULTS>>>" in raw:
+            text, _, tail = raw.partition("<<<RESULTS>>>")
+            text = text.strip()
+            m = re.search(r"\[.*\]", tail, re.S)
+            if m:
+                try:
+                    results = json.loads(m.group(0))
+                except Exception:
+                    results = []
+        return (text or None), results
     except Exception as exc:  # network / auth / rate limit — fall back to the text recap
         print(f"AI recap failed: {exc}")
-        return None
+        return None, []
 
 
 async def ai_preseason(recruit_images: list, heisman_images: list, banter: str,
@@ -375,8 +396,8 @@ async def ai_preseason(recruit_images: list, heisman_images: list, banter: str,
         return None
 
 
-async def ai_dispatch_image(dispatch_text: str, week_label: str) -> bytes | None:
-    """Feed the finished Dispatch text to OpenAI's image model and return a PNG, or None."""
+async def ai_background(week_label: str) -> bytes | None:
+    """Generate a TEXTLESS broadcast background (stadium/energy art) via OpenAI, or None."""
     global _last_ai_error
     if openai is None:
         _last_ai_error = "openai library not installed on the host"
@@ -386,15 +407,12 @@ async def ai_dispatch_image(dispatch_text: str, week_label: str) -> bytes | None
         _last_ai_error = "OPENAI_API_KEY not set in the running process"
         print(f"Dispatch image skipped: {_last_ai_error}")
         return None
-    # Strip Discord markdown so the model reads the content, not the syntax.
-    clean = re.sub(r"[#*_`>]", "", dispatch_text).strip()
     prompt = (
-        "Design a bold, premium sports-broadcast graphic — the front page of a college football "
-        f"league newspaper called 'The Dynasty Dispatch' ({week_label}). Use a dynamic, high-energy "
-        "layout: dramatic stadium lighting, team-color panels, big condensed headline typography, clean "
-        "scoreboard/matchup blocks, and tidy section headers for game results, recruiting, the Heisman "
-        "watch, and the biggest upcoming matchups. Sports-network aesthetic, no real brand logos. "
-        "Base every headline and result on this recap:\n\n" + clean
+        "A dramatic, cinematic college football stadium background for a sports-broadcast graphic: "
+        "packed night stadium, moody field lighting, lens flares, deep shadows, energetic atmosphere, "
+        "wide 3:2 composition with darker top and bottom edges. IMPORTANT: absolutely NO text, NO "
+        "letters, NO numbers, NO logos, NO scoreboards, NO watermarks, and no readable signage — just "
+        "the atmospheric background. Photorealistic, high detail."
     )
     try:
         client = openai.AsyncOpenAI()
@@ -405,6 +423,65 @@ async def ai_dispatch_image(dispatch_text: str, week_label: str) -> bytes | None
     except Exception as exc:
         _last_ai_error = f"image API error: {type(exc).__name__}: {exc}"
         print(f"Dispatch image failed: {exc}")
+        return None
+
+
+GOW_SCHEMA_HINT = (
+    '{"away": "<away team>", "home": "<home team>", "subtitle": "<short hook, e.g. \'Top-5 clash in '
+    'Columbus\'>", "keys_away": ["k1", "k2", "k3"], "keys_home": ["k1", "k2", "k3"]}'
+)
+
+
+async def ai_gameofweek(week_label: str, games: list, context: str) -> dict | None:
+    """Pick the marquee matchup from `games` and write Keys to Win. Returns a dict or None."""
+    if anthropic is None or not os.environ.get("ANTHROPIC_API_KEY") or not games:
+        return None
+    slate = "\n".join(f"- {a} at {h}" for h, a in games)
+    prompt = (
+        f"You are the editor of The Dynasty Dispatch ({week_label}) for a College Football 27 dynasty. "
+        f"From THIS slate of user-vs-user games, pick the single biggest 'Game of the Week':\n{slate}\n\n"
+        "Then write three short 'keys to win' for each side (max ~5 words each) and a punchy one-line "
+        "subtitle. Base it on the teams' profiles and this recap context if useful:\n"
+        f"{context[:1200]}\n\n"
+        "Respond with ONLY a JSON object, no prose, exactly this shape:\n" + GOW_SCHEMA_HINT +
+        "\nUse the exact team names from the slate."
+    )
+    try:
+        client = anthropic.AsyncAnthropic()
+        msg = await client.messages.create(
+            model=RECAP_MODEL, max_tokens=1200, messages=[{"role": "user", "content": prompt}]
+        )
+        raw = "".join(b.text for b in msg.content if b.type == "text")
+        m = re.search(r"\{.*\}", raw, re.S)
+        return json.loads(m.group(0)) if m else None
+    except Exception as exc:
+        print(f"Game-of-week pick failed: {exc}")
+        return None
+
+
+async def make_matchup_graphic(week, games: list, context: str) -> bytes | None:
+    """Build the hybrid Game-of-the-Week card: AI background + exact overlay. PNG bytes or None."""
+    if card is None or not games:
+        return None
+    week_label = f"Week {week}" if str(week).strip() not in ("", "Preseason") else "Preseason"
+    pick = await ai_gameofweek(week_label, games, context) or {}
+    valid = {(h, a) for h, a in games}
+    home, away = pick.get("home"), pick.get("away")
+    if (home, away) not in valid:  # bad/duplicate pick — headline the first game
+        home, away = games[0]
+        pick = {}
+    around = [(h, a) for h, a in games if (h, a) != (home, away)]
+    bg = await ai_background(week_label)  # None -> card falls back to flat team-color panels
+    try:
+        return card.matchup_card(
+            bg, week=week, away=away, home=home,
+            away_sub=standings.record_str(away), home_sub=standings.record_str(home),
+            subtitle=pick.get("subtitle", ""),
+            keys_away=pick.get("keys_away") or [], keys_home=pick.get("keys_home") or [],
+            around=around,
+        )
+    except Exception as exc:
+        print(f"Card render failed: {exc}")
         return None
 
 
@@ -695,10 +772,10 @@ def main() -> None:
                     banter_lines.append(f"{m.author.display_name}: {txt}")
         banter = "\n".join(banter_lines[-80:])
 
-        ai = await ai_recap(week, games, images, recruit_images, heisman_images, banter,
-                            next_week, next_games)
-        if ai:
-            return ai
+        ai_text, ai_results = await ai_recap(week, games, images, recruit_images, heisman_images,
+                                             banter, next_week, next_games)
+        if ai_text:
+            return ai_text, ai_results
         # Fallback: parse text score lines from #score-reporting.
         done, pending = [], []
         for home, away in games:
@@ -706,12 +783,14 @@ def main() -> None:
             (done if res else pending).append((home, away, res))
 
         lines = [f"# 📰 The Dynasty Dispatch — Week {week}", "*Around the league this week*", ""]
+        results = []
         if done:
             for home, away, (hs, aw) in done:
                 if hs == aw:
                     lines.append(f"• **{home}** and **{away}** tied {hs}-{aw}")
                 else:
                     w, ws, l, ls = (home, hs, away, aw) if hs > aw else (away, aw, home, hs)
+                    results.append({"winner": w, "loser": l})
                     margin = ws - ls
                     verb = "edged" if margin <= 3 else "held off" if margin <= 7 else "beat" if margin <= 17 else "rolled"
                     lines.append(f"• **{w}** {verb} {l}, **{ws}-{ls}**")
@@ -725,7 +804,7 @@ def main() -> None:
             lines.append(f"## 🔥 Key Matchups — Week {next_week}")
             for home, away in next_games[:3]:
                 lines.append(f"• **{away}** at **{home}**")
-        return "\n".join(lines)
+        return "\n".join(lines), results
 
     async def build_preseason(guild: discord.Guild) -> str:
         """Preseason paper — scans recent recruiting/heisman/chat (no results) + the opening slate."""
@@ -799,13 +878,16 @@ def main() -> None:
             return "no #league-news channel"
         paper = await build_preseason(guild)
         await send_paper(news_ch, paper)
-        img = await ai_dispatch_image(paper, "Preseason")
-        if img:
-            await news_ch.send(file=discord.File(io.BytesIO(img), filename="dispatch-preseason.png"))
+        schedule = load_schedule()
+        weeks = sorted(int(w) for w in schedule if w.isdigit())
+        opener_games = schedule[str(weeks[0])] if weeks else []
+        png = await make_matchup_graphic("Preseason", opener_games, paper)
+        if png:
+            await news_ch.send(file=discord.File(io.BytesIO(png), filename="dispatch-preseason.png"))
         if "The Full Slate" in paper:  # fallback template ran — AI didn't
             reason = _last_ai_error or "unknown (no material to write from)"
             return f"preseason posted, but the AI edition didn't run — reason: {reason}"
-        return "preseason edition posted to #league-news" + ("" if img else " (no graphic — check logs)")
+        return "preseason edition posted to #league-news" + ("" if png else " (no graphic — check logs)")
 
     async def do_advance(guild: discord.Guild, force: bool) -> str:
         """Post last week's recap (from scores) + the next week's matchups. Returns a status line."""
@@ -837,11 +919,14 @@ def main() -> None:
 
         news_ch = discord.utils.get(guild.text_channels, name=NEWS_CHANNEL)
         if news_ch is not None:
-            paper = await build_newspaper(guild, last_week, last_time, next_week, next_games)
+            paper, results = await build_newspaper(guild, last_week, last_time, next_week, next_games)
+            if results:
+                standings.record_week(last_week, results)  # idempotent per week
             await send_paper(news_ch, paper)
-            img = await ai_dispatch_image(paper, f"Week {last_week}")
-            if img:
-                await news_ch.send(file=discord.File(io.BytesIO(img), filename=f"dispatch-week-{last_week}.png"))
+            if next_games:  # Game-of-the-Week card previews the upcoming slate
+                png = await make_matchup_graphic(next_week, next_games, paper)
+                if png:
+                    await news_ch.send(file=discord.File(io.BytesIO(png), filename=f"gotw-week-{next_week}.png"))
 
         if not upcoming:
             return f"posted Week {last_week} recap — season complete, no more weeks"
