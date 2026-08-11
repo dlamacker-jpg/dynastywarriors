@@ -46,6 +46,9 @@ ACTIVE_CHECK_MARKER = "🚨 ACTIVE CHECK"    # used to find the previous check
 MATCHUPS_CHANNEL = "user-game-coordination"  # where weekly user games are posted
 ADVANCE_HOURS = 48                           # post the next week every 48h (the force-advance cadence)
 MATCHUPS_MARKER = "🏈 Week"                    # used to find the last posted week
+NEWS_CHANNEL = "league-news"                 # where the weekly recap ("newspaper") posts
+SCORES_CHANNEL = "score-reporting"           # read for results to build the recap
+COMMISH_ROLES = ("Commissioner", "Co-Commissioner")  # who may run !advance
 QUIET_MODE = True  # TEST: render @tags/checks as clickable but DON'T ping. Set False to go live.
 TEAMS_FILE = Path(__file__).with_name("teams_fbs.json")
 RESERVED_FILE = Path(__file__).with_name("reserved.json")
@@ -185,8 +188,23 @@ def main() -> None:
             key_to_team.setdefault(akey, tn)
     substr_keys = sorted((k for k in key_to_team if len(k) >= 5), key=len, reverse=True)
 
+    raw_aliases = {}
+    if ALIASES_FILE.exists():
+        with ALIASES_FILE.open(encoding="utf-8") as f:
+            raw_aliases = {k: v for k, v in json.load(f).items() if not str(k).startswith("_")}
+    # search_terms: team-norm -> lowercase strings to find that team inside freeform score text
+    search_terms: dict[str, list[str]] = {}
+    for _conf, _teams in conferences.items():
+        for _t in _teams:
+            search_terms.setdefault(base_norm(_t), []).append(_t.lower())
+    for _alias, _official in raw_aliases.items():
+        _tn = base_norm(_official)
+        if _tn in team_by_norm:
+            search_terms.setdefault(_tn, []).append(str(_alias).lower())
+
     intents = discord.Intents.default()
-    intents.members = True  # requires the Server Members Intent (see header)
+    intents.members = True           # requires the Server Members Intent (see header)
+    intents.message_content = True   # requires the Message Content Intent (for !advance + reading scores)
     client = discord.Client(intents=intents)
     roster_lock = asyncio.Lock()
 
@@ -357,35 +375,99 @@ def main() -> None:
         )
         await channel.send("\n".join(lines), allowed_mentions=allowed)
 
-    @tasks.loop(hours=3)
-    async def advance_loop() -> None:
-        """Post the next week's matchups once 48h have passed since the last week's post."""
+    def find_team_pos(text_lower: str, team: str):
+        """Character index where `team` (name or alias) first appears in the text, or None."""
+        best = None
+        for term in search_terms.get(normalize(team), [team.lower()]):
+            i = text_lower.find(term)
+            if i >= 0 and (best is None or i < best):
+                best = i
+        return best
+
+    def parse_result(text: str, home: str, away: str):
+        """Best-effort (home_score, away_score) from a freeform score message, else None."""
+        low = text.lower()
+        hp, ap = find_team_pos(low, home), find_team_pos(low, away)
+        if hp is None or ap is None:
+            return None
+        nums = [(mt.start(), int(mt.group())) for mt in re.finditer(r"\d{1,3}", text)]
+        if len(nums) < 2:
+            return None
+
+        def score_for(pos: int) -> int:
+            after = [n for n in nums if n[0] > pos]  # a team's score follows its name
+            pool = after or nums
+            return min(pool, key=lambda n: abs(n[0] - pos))[1]
+
+        return score_for(hp), score_for(ap)
+
+    async def build_newspaper(guild: discord.Guild, week: int, since) -> str:
+        scores_ch = discord.utils.get(guild.text_channels, name=SCORES_CHANNEL)
+        reports = []
+        if scores_ch is not None:
+            reports = [m async for m in scores_ch.history(limit=300, after=since)]
+        games = load_schedule().get(str(week), [])
+        done, pending = [], []
+        for home, away in games:
+            res = next((r for m in reports if (r := parse_result(m.content, home, away))), None)
+            (done if res else pending).append((home, away, res))
+
+        lines = [f"# 📰 The Dynasty Dispatch — Week {week}", "*Around the league this week*", ""]
+        if done:
+            for home, away, (hs, aw) in done:
+                if hs == aw:
+                    lines.append(f"• **{home}** and **{away}** tied {hs}-{aw}")
+                else:
+                    w, ws, l, ls = (home, hs, away, aw) if hs > aw else (away, aw, home, hs)
+                    margin = ws - ls
+                    verb = "edged" if margin <= 3 else "held off" if margin <= 7 else "beat" if margin <= 17 else "rolled"
+                    lines.append(f"• **{w}** {verb} {l}, **{ws}-{ls}**")
+        else:
+            lines.append("*No results reported yet.*")
+        if pending:
+            lines.append("")
+            lines.append("📋 Still to report: " + ", ".join(f"{a} @ {h}" for h, a, _ in pending))
+        return "\n".join(lines)
+
+    async def do_advance(guild: discord.Guild, force: bool) -> str:
+        """Post last week's recap (from scores) + the next week's matchups. Returns a status line."""
+        uch = discord.utils.get(guild.text_channels, name=MATCHUPS_CHANNEL)
+        if uch is None:
+            return "no #user-game-coordination channel"
         schedule = load_schedule()
         weeks = sorted(int(w) for w in schedule if w.isdigit())
         if not weeks:
-            return
+            return "schedule is empty — nothing to advance"
+
+        last_week, last_time = None, None
+        async for m in uch.history(limit=100):
+            if m.author.id == client.user.id and m.content.startswith(MATCHUPS_MARKER):
+                mt = re.match(rf"{re.escape(MATCHUPS_MARKER)} (\d+)", m.content)
+                if mt:
+                    last_week, last_time = int(mt.group(1)), m.created_at
+                    break
+
+        if last_week is None:  # season kickoff — no prior week to recap
+            await post_week(guild, uch, weeks[0], schedule[str(weeks[0])])
+            return f"kicked off — posted Week {weeks[0]}"
+        if not force and last_time and (discord.utils.utcnow() - last_time).total_seconds() < ADVANCE_HOURS * 3600:
+            return "too soon since the last advance"
+
+        news_ch = discord.utils.get(guild.text_channels, name=NEWS_CHANNEL)
+        if news_ch is not None:
+            paper = await build_newspaper(guild, last_week, last_time)
+            await news_ch.send(paper, allowed_mentions=discord.AllowedMentions.none())
+
+        upcoming = [w for w in weeks if w > last_week]
+        if not upcoming:
+            return f"posted Week {last_week} recap — season complete, no more weeks"
+        await post_week(guild, uch, upcoming[0], schedule[str(upcoming[0])])
+        return f"Week {last_week} recap posted + Week {upcoming[0]} matchups are up"
+
+    @tasks.loop(hours=3)
+    async def advance_loop() -> None:
         for guild in client.guilds:
-            channel = discord.utils.get(guild.text_channels, name=MATCHUPS_CHANNEL)
-            if channel is None:
-                continue
-            last_week, last_time = None, None
-            async for m in channel.history(limit=100):
-                if m.author.id == client.user.id and m.content.startswith(MATCHUPS_MARKER):
-                    mt = re.match(rf"{re.escape(MATCHUPS_MARKER)} (\d+)", m.content)
-                    if mt:
-                        last_week, last_time = int(mt.group(1)), m.created_at
-                        break
-            if last_week is None:
-                next_week = weeks[0]  # season kickoff: post the first week (may be Week 0)
-            else:
-                if last_time and (discord.utils.utcnow() - last_time).total_seconds() < ADVANCE_HOURS * 3600:
-                    continue
-                upcoming = [w for w in weeks if w > last_week]
-                if not upcoming:
-                    continue  # season complete
-                next_week = upcoming[0]
-            await post_week(guild, channel, next_week, schedule[str(next_week)])
-            print(f"Posted Week {next_week} matchups in #{MATCHUPS_CHANNEL} ({guild.name}).")
+            await do_advance(guild, force=False)
 
     @tasks.loop(hours=6)
     async def active_check_loop() -> None:
@@ -506,6 +588,20 @@ def main() -> None:
             await losers.send(msg, allowed_mentions=discord.AllowedMentions.none())
 
         await refresh_all(member.guild)
+
+    @client.event
+    async def on_message(message: discord.Message) -> None:
+        if message.author.bot or message.guild is None:
+            return
+        if message.content.strip().lower() != "!advance":
+            return
+        roles = getattr(message.author, "roles", [])
+        if not any(r.name in COMMISH_ROLES for r in roles):
+            await message.reply("Only commissioners can run `!advance`.", mention_author=False)
+            return
+        async with roster_lock:  # serialize with board refreshes
+            status = await do_advance(message.guild, force=True)
+        await message.reply(f"⏩ {status}", mention_author=False)
 
     client.run(token)
 
