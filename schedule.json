@@ -1,17 +1,17 @@
 {
-  "_comment": "Season schedule of USER-vs-USER games, keyed by week (string). Each game is [home_team, away_team]. Compiled from team schedule screenshots. The bot posts each week's matchups in #user-game-coordination on the 48h advance cadence and @tags both coaches. NOTE: games between two of {Iowa, Florida, Florida State, Miami} may be missing — those teams weren't in the source video.",
-  "0": [["Oklahoma", "Florida State"], ["USC", "Texas A&M"]],
-  "1": [["Ohio State", "LSU"], ["Oklahoma", "Iowa"], ["Oregon", "Texas"], ["Penn State", "Alabama"], ["Michigan", "South Carolina"], ["USC", "Florida"]],
-  "2": [["Texas", "Ohio State"], ["Alabama", "Oregon"], ["Georgia", "Penn State"], ["South Carolina", "Miami"], ["Duke", "Michigan"]],
+  "_comment": "Season schedule of USER-vs-USER games, keyed by week (string). Each game is [home_team, away_team]. Compiled from team schedule screenshots + reschedules. The bot posts each week's matchups in #user-game-coordination on the 48h advance cadence and @tags both coaches. PENDING: Iowa's full schedule and confirmation of Florida State's slate; Penn State's Week 2 opponent (its Georgia game was rescheduled away).",
+  "0": [["Oklahoma", "Florida State"], ["USC", "Texas A&M"], ["Florida", "Michigan"]],
+  "1": [["Ohio State", "LSU"], ["Oklahoma", "Iowa"], ["Oregon", "Texas"], ["Penn State", "Alabama"], ["Michigan", "South Carolina"], ["USC", "Florida"], ["Texas A&M", "Clemson"]],
+  "2": [["Texas", "Ohio State"], ["Alabama", "Oregon"], ["South Carolina", "Miami"], ["Duke", "Michigan"], ["Clemson", "Georgia"]],
   "3": [["LSU", "Ole Miss"], ["Notre Dame", "Penn State"], ["Alabama", "Florida State"]],
   "4": [["Oklahoma", "Georgia"], ["Duke", "Ole Miss"], ["USC", "Oregon"], ["South Carolina", "Alabama"], ["Texas A&M", "LSU"], ["Florida", "Notre Dame"], ["Michigan", "Iowa"]],
-  "5": [["Iowa", "Ohio State"], ["Ole Miss", "Alabama"], ["Georgia", "Texas A&M"], ["LSU", "Duke"]],
-  "6": [["Ole Miss", "South Carolina"], ["Penn State", "USC"], ["Miami", "Oklahoma"]],
-  "7": [["Notre Dame", "Oklahoma"], ["Michigan", "Penn State"], ["LSU", "South Carolina"], ["Florida", "Texas"]],
+  "5": [["Iowa", "Ohio State"], ["Ole Miss", "Alabama"], ["Georgia", "Texas A&M"], ["LSU", "Duke"], ["Clemson", "Miami"]],
+  "6": [["Ole Miss", "South Carolina"], ["Penn State", "USC"], ["Oklahoma", "Miami"]],
+  "7": [["Notre Dame", "Oklahoma"], ["Michigan", "Penn State"], ["LSU", "South Carolina"], ["Florida", "Texas"], ["Miami", "Florida State"]],
   "8": [["Texas", "Ole Miss"], ["Alabama", "Texas A&M"], ["Georgia", "Notre Dame"]],
-  "9": [["USC", "Ohio State"], ["Florida", "Georgia"]],
+  "9": [["USC", "Ohio State"], ["Florida", "Georgia"], ["Florida State", "Clemson"]],
   "10": [["Ohio State", "Oregon"], ["Oklahoma", "Florida"], ["Georgia", "Ole Miss"], ["South Carolina", "Texas A&M"], ["USC", "Notre Dame"], ["Alabama", "LSU"]],
   "11": [["Oregon", "Michigan"], ["Texas", "Notre Dame"], ["Miami", "Duke"]],
-  "12": [["Oklahoma", "Texas A&M"], ["Notre Dame", "Alabama"]],
-  "13": [["Ohio State", "Michigan"], ["Texas A&M", "Texas"]]
+  "12": [["Oklahoma", "Texas A&M"], ["Notre Dame", "Alabama"], ["Duke", "Clemson"]],
+  "13": [["Ohio State", "Michigan"], ["Texas A&M", "Texas"], ["Clemson", "South Carolina"], ["Florida State", "Florida"]]
 }
