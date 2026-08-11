@@ -1,5 +1,5 @@
 {
-  "_comment": "Season schedule of USER-vs-USER games, keyed by week (string). Each game is [home_team, away_team]. Compiled from team schedule screenshots + reschedules. The bot posts each week's matchups in #user-game-coordination on the 48h advance cadence and @tags both coaches. PENDING: Iowa's full schedule and confirmation of Florida State's slate; Penn State's Week 2 opponent (its Georgia game was rescheduled away).",
+  "_comment": "Season schedule of USER-vs-USER games, keyed by week (string). Each game is [home_team, away_team]. Compiled from team schedule screenshots + reschedules. The bot posts each week's matchups in #user-game-coordination on the 48h advance cadence and @tags both coaches. PENDING: Iowa's full schedule (and any Iowa-Florida State game).",
   "0": [["Oklahoma", "Florida State"], ["USC", "Texas A&M"], ["Florida", "Michigan"]],
   "1": [["Ohio State", "LSU"], ["Oklahoma", "Iowa"], ["Oregon", "Texas"], ["Penn State", "Alabama"], ["Michigan", "South Carolina"], ["USC", "Florida"], ["Texas A&M", "Clemson"]],
   "2": [["Texas", "Ohio State"], ["Alabama", "Oregon"], ["South Carolina", "Miami"], ["Duke", "Michigan"], ["Clemson", "Georgia"]],
