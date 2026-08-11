@@ -57,6 +57,8 @@ MATCHUPS_MARKER = "🏈 Week"                    # used to find the last posted 
 NEWS_CHANNEL = "league-news"                 # where the weekly recap ("newspaper") posts
 SCORES_CHANNEL = "score-reporting"           # read for results to build the recap
 RECRUITING_CHANNEL = "recruiting"            # read for recruiting screenshots (commits, portal, rankings)
+HEISMAN_CHANNEL = "heisman"                   # read for Heisman-race / stat-leader screenshots
+TRASH_CHANNELS = ("general", "user-game-coordination")  # scanned for quotable trash talk
 COMMISH_ROLES = ("Commissioner", "Co-Commissioner")  # who may run !advance
 QUIET_MODE = False  # LIVE: matchup posts and active checks ping coaches.
 TEAMS_FILE = Path(__file__).with_name("teams_fbs.json")
@@ -187,10 +189,14 @@ def _img_block(media_type: str, data: bytes) -> dict:
     }
 
 
-async def ai_recap(week: int, games: list, images: list, recruit_images: list | None = None) -> str | None:
-    """Send box-score (and recruiting) photos to Claude (vision) for a written recap, or None."""
+async def ai_recap(week: int, games: list, images: list, recruit_images: list | None = None,
+                   heisman_images: list | None = None, banter: str = "") -> str | None:
+    """Send box-score / recruiting / Heisman photos (+ chat banter) to Claude for a recap, or None."""
     recruit_images = recruit_images or []
-    if anthropic is None or not os.environ.get("ANTHROPIC_API_KEY") or not (images or recruit_images):
+    heisman_images = heisman_images or []
+    if anthropic is None or not os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+    if not (images or recruit_images or heisman_images or banter):
         return None
     content: list = []
     if images:
@@ -199,23 +205,35 @@ async def ai_recap(week: int, games: list, images: list, recruit_images: list | 
     if recruit_images:
         content.append({"type": "text", "text": "=== RECRUITING SCREENSHOTS (commits, transfer portal, rankings) ==="})
         content += [_img_block(mt, d) for mt, d in recruit_images]
+    if heisman_images:
+        content.append({"type": "text", "text": "=== HEISMAN SCREENSHOTS (Heisman race / player stat leaders) ==="})
+        content += [_img_block(mt, d) for mt, d in heisman_images]
     matchups = "\n".join(f"- {a} at {h}" for h, a in games) or "(none)"
+    banter_block = (
+        f"\n\n=== CHAT MESSAGES THIS WEEK (coach: message) — mine these for trash talk ===\n{banter}"
+        if banter else ""
+    )
     content.append({
         "type": "text",
         "text": (
             "You are the beat writer for 'The Dynasty Dispatch', the newspaper of a College Football 27 "
-            f"online dynasty. Two kinds of photos may be attached above, each under its own labeled header: "
-            "box-score photos (often phone photos of a TV) and recruiting screenshots (commits, transfer "
-            f"portal moves, recruiting-class rankings).\n\nThis week's user-vs-user matchups are:\n{matchups}\n\n"
+            "online dynasty. Attached above (each under its own labeled header) may be box-score photos, "
+            "recruiting screenshots, and Heisman/stat-leader screenshots. A coach's Discord name is usually "
+            f"their school.{banter_block}\n\nThis week's user-vs-user matchups are:\n{matchups}\n\n"
             f"Write a short, lively recap in Discord markdown starting with '# 📰 The Dynasty Dispatch — Week {week}'.\n"
             "**Game results** — under a '## 🏈 On the Field' header, read each box score, match it to one of the "
             "matchups above, and give one bullet per game: winner in **bold**, the final score, and one sentence of "
             "color using real stats (yards, turnovers, big plays). List any matchup with no readable box score on a "
             "short 'Still to report' line. Only cover the matchups listed above.\n"
-            "**Recruiting** — if any recruiting screenshots are attached, add a '## 📈 Recruiting Trail' header and "
-            "2-5 bullets summarizing what they show (school landing a commit with the recruit's name/stars/position, "
-            "portal adds or losses, class-ranking movement). Bold the school. If no recruiting screenshots are "
-            "attached, omit this section entirely — do not invent recruiting news.\n"
+            "**Recruiting** — if recruiting screenshots are attached, add a '## 📈 Recruiting Trail' header with "
+            "2-5 bullets (school landing a commit with the recruit's name/stars/position, portal moves, class-rank "
+            "movement). Bold the school. Omit the section entirely if no recruiting screenshots — never invent it.\n"
+            "**Heisman** — if Heisman/stat screenshots are attached, add a '## 🏆 Heisman Watch' header with a short "
+            "ranked list of the top contenders (player, team, key stat). Omit if none attached — never invent it.\n"
+            "**Trash talk** — if chat messages are provided, add a '## 🗣️ Bulletin Board' header with 2-4 of the "
+            "best, punchiest trash-talk quotes, each in quotation marks and attributed to the coach (**— Team**). "
+            "Quote real messages only; light smack talk is the vibe, but skip anything genuinely nasty, personal, "
+            "or hateful. Omit the section if there's nothing good — don't fabricate quotes.\n"
             "Keep the whole thing under 1900 characters."
         ),
     })
@@ -502,7 +520,23 @@ def main() -> None:
                     except Exception:
                         pass
         recruit_images = await collect_images(RECRUITING_CHANNEL, 8)
-        ai = await ai_recap(week, games, images, recruit_images)
+        heisman_images = await collect_images(HEISMAN_CHANNEL, 6)
+
+        # Scan chat channels for quotable trash talk (text only).
+        banter_lines = []
+        for cname in TRASH_CHANNELS:
+            ch = discord.utils.get(guild.text_channels, name=cname)
+            if ch is None:
+                continue
+            async for m in ch.history(limit=200, after=since):
+                if m.author.bot:
+                    continue
+                txt = " ".join(m.content.split())
+                if 3 <= len(txt) <= 300:
+                    banter_lines.append(f"{m.author.display_name}: {txt}")
+        banter = "\n".join(banter_lines[-80:])
+
+        ai = await ai_recap(week, games, images, recruit_images, heisman_images, banter)
         if ai:
             return ai
         # Fallback: parse text score lines from #score-reporting.
