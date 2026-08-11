@@ -683,28 +683,44 @@ def main() -> None:
 
         schedule = load_schedule()
         weeks = sorted(int(w) for w in schedule if w.isdigit())
+        season = [(w, schedule[str(w)]) for w in weeks]
         opener_week = weeks[0] if weeks else None
         opener_games = schedule[str(opener_week)] if opener_week is not None else []
 
-        ai = await ai_preseason(recruit_images, heisman_images, banter, opener_week, opener_games)
+        ai = await ai_preseason(recruit_images, heisman_images, banter, season)
         if ai:
             return ai
-        # Fallback text edition.
+        # Fallback text edition — full-season slate, no AI.
         lines = ["# 📰 The Dynasty Dispatch — Preseason", "*The season's almost here.*", ""]
-        if opener_games:
-            lines.append(f"## 🔥 Season Openers — Week {opener_week}")
-            for home, away in opener_games[:3]:
-                lines.append(f"• **{away}** at **{home}**")
+        if season:
+            lines.append("## 🍿 The Full Slate")
+            for wk, games in season:
+                lines.append(f"**Week {wk}:** " + ", ".join(f"{a} @ {h}" for h, a in games))
         else:
             lines.append("*Set your rosters — kickoff is coming.*")
         return "\n".join(lines)
+
+    async def send_paper(channel: discord.TextChannel, text: str) -> None:
+        """Send a paper to a channel, splitting on line breaks to respect Discord's 2000-char limit."""
+        chunks, buf = [], ""
+        for line in text.split("\n"):
+            if len(buf) + len(line) + 1 > 1990:
+                if buf:
+                    chunks.append(buf)
+                buf = line
+            else:
+                buf = f"{buf}\n{line}" if buf else line
+        if buf:
+            chunks.append(buf)
+        for chunk in chunks:
+            await channel.send(chunk, allowed_mentions=discord.AllowedMentions.none())
 
     async def do_preseason(guild: discord.Guild) -> str:
         news_ch = discord.utils.get(guild.text_channels, name=NEWS_CHANNEL)
         if news_ch is None:
             return "no #league-news channel"
         paper = await build_preseason(guild)
-        await news_ch.send(paper, allowed_mentions=discord.AllowedMentions.none())
+        await send_paper(news_ch, paper)
         return "preseason edition posted to #league-news"
 
     async def do_advance(guild: discord.Guild, force: bool) -> str:
@@ -738,7 +754,7 @@ def main() -> None:
         news_ch = discord.utils.get(guild.text_channels, name=NEWS_CHANNEL)
         if news_ch is not None:
             paper = await build_newspaper(guild, last_week, last_time, next_week, next_games)
-            await news_ch.send(paper, allowed_mentions=discord.AllowedMentions.none())
+            await send_paper(news_ch, paper)
 
         if not upcoming:
             return f"posted Week {last_week} recap — season complete, no more weeks"
