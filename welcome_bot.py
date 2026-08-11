@@ -190,10 +190,12 @@ def _img_block(media_type: str, data: bytes) -> dict:
 
 
 async def ai_recap(week: int, games: list, images: list, recruit_images: list | None = None,
-                   heisman_images: list | None = None, banter: str = "") -> str | None:
+                   heisman_images: list | None = None, banter: str = "",
+                   next_week: int | None = None, next_games: list | None = None) -> str | None:
     """Send box-score / recruiting / Heisman photos (+ chat banter) to Claude for a recap, or None."""
     recruit_images = recruit_images or []
     heisman_images = heisman_images or []
+    next_games = next_games or []
     if anthropic is None or not os.environ.get("ANTHROPIC_API_KEY"):
         return None
     if not (images or recruit_images or heisman_images or banter):
@@ -213,13 +215,17 @@ async def ai_recap(week: int, games: list, images: list, recruit_images: list | 
         f"\n\n=== CHAT MESSAGES THIS WEEK (coach: message) — mine these for trash talk ===\n{banter}"
         if banter else ""
     )
+    next_block = ""
+    if next_games:
+        nm = "\n".join(f"- {a} at {h}" for h, a in next_games)
+        next_block = f"\n\nNEXT WEEK (Week {next_week}) user-vs-user matchups to preview:\n{nm}"
     content.append({
         "type": "text",
         "text": (
             "You are the beat writer for 'The Dynasty Dispatch', the newspaper of a College Football 27 "
             "online dynasty. Attached above (each under its own labeled header) may be box-score photos, "
             "recruiting screenshots, and Heisman/stat-leader screenshots. A coach's Discord name is usually "
-            f"their school.{banter_block}\n\nThis week's user-vs-user matchups are:\n{matchups}\n\n"
+            f"their school.{banter_block}{next_block}\n\nThis week's user-vs-user matchups are:\n{matchups}\n\n"
             f"Write a short, lively recap in Discord markdown starting with '# 📰 The Dynasty Dispatch — Week {week}'.\n"
             "**Game results** — under a '## 🏈 On the Field' header, read each box score, match it to one of the "
             "matchups above, and give one bullet per game: winner in **bold**, the final score, and one sentence of "
@@ -234,6 +240,10 @@ async def ai_recap(week: int, games: list, images: list, recruit_images: list | 
             "best, punchiest trash-talk quotes, each in quotation marks and attributed to the coach (**— Team**). "
             "Quote real messages only; light smack talk is the vibe, but skip anything genuinely nasty, personal, "
             "or hateful. Omit the section if there's nothing good — don't fabricate quotes.\n"
+            "**Key Matchups** — if a NEXT WEEK slate is provided above, END the paper with a '## 🔥 Key Matchups' "
+            "header previewing the 2-3 biggest games of that upcoming week (bold both teams, one line of hype each — "
+            "lean on marquee programs, rivalries, and how teams looked this week). Only use the next-week games "
+            "listed. Omit if no next-week slate was provided.\n"
             "Keep the whole thing under 1900 characters."
         ),
     })
@@ -248,6 +258,65 @@ async def ai_recap(week: int, games: list, images: list, recruit_images: list | 
         return text or None
     except Exception as exc:  # network / auth / rate limit — fall back to the text recap
         print(f"AI recap failed: {exc}")
+        return None
+
+
+async def ai_preseason(recruit_images: list, heisman_images: list, banter: str,
+                       opener_week: int | None, opener_games: list) -> str | None:
+    """Preseason edition — no game results yet. Recruiting/preseason watch/hype + openers."""
+    if anthropic is None or not os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+    if not (recruit_images or heisman_images or banter or opener_games):
+        return None
+    content: list = []
+    if recruit_images:
+        content.append({"type": "text", "text": "=== RECRUITING SCREENSHOTS (classes, commits, portal) ==="})
+        content += [_img_block(mt, d) for mt, d in recruit_images]
+    if heisman_images:
+        content.append({"type": "text", "text": "=== PRESEASON WATCH SCREENSHOTS (award watch / rankings) ==="})
+        content += [_img_block(mt, d) for mt, d in heisman_images]
+    banter_block = (
+        f"\n\n=== CHAT MESSAGES (coach: message) — mine for preseason trash talk ===\n{banter}"
+        if banter else ""
+    )
+    opener_block = ""
+    if opener_games:
+        om = "\n".join(f"- {a} at {h}" for h, a in opener_games)
+        opener_block = f"\n\nOPENING SLATE (Week {opener_week}) user-vs-user matchups:\n{om}"
+    content.append({
+        "type": "text",
+        "text": (
+            "You are the beat writer for 'The Dynasty Dispatch', the newspaper of a College Football 27 online "
+            "dynasty. This is the PRESEASON edition — NO games have been played yet, so do NOT report or invent any "
+            "scores or results. A coach's Discord name is usually their school."
+            f"{banter_block}{opener_block}\n\n"
+            "Write a lively preseason edition in Discord markdown starting with "
+            f"'# 📰 The Dynasty Dispatch — Preseason'.\n"
+            "**Recruiting** — if recruiting screenshots are attached, add a '## 📈 Recruiting Trail' header with 2-5 "
+            "bullets (top classes, notable commits with name/stars/position, portal moves). Bold the school. Omit if "
+            "no recruiting screenshots.\n"
+            "**Preseason Watch** — if award/ranking screenshots are attached, add a '## 🏆 Preseason Watch' header "
+            "with a short ranked list (player, team, position/stat, or ranked teams). Omit if none attached.\n"
+            "**Trash talk** — if chat messages are provided, add a '## 🗣️ Bulletin Board' header with 2-4 of the "
+            "punchiest quotes, in quotation marks, attributed to the coach (**— Team**). Real messages only; light "
+            "smack is the vibe, skip anything genuinely nasty or personal. Omit if nothing good.\n"
+            "**Openers** — if an opening slate is provided, END with a '## 🔥 Season Openers' header previewing the "
+            "2-3 biggest Week " + (str(opener_week) if opener_week is not None else "0") + " games (bold both teams, "
+            "one line of hype each). Only use the games listed.\n"
+            "Never fabricate a section with no source material. Keep it under 1900 characters."
+        ),
+    })
+    try:
+        client = anthropic.AsyncAnthropic()
+        msg = await client.messages.create(
+            model=RECAP_MODEL, max_tokens=4000, messages=[{"role": "user", "content": content}]
+        )
+        if msg.stop_reason == "refusal":
+            return None
+        text = "".join(b.text for b in msg.content if b.type == "text").strip()
+        return text or None
+    except Exception as exc:
+        print(f"AI preseason failed: {exc}")
         return None
 
 
@@ -489,7 +558,9 @@ def main() -> None:
 
         return score_for(hp), score_for(ap)
 
-    async def build_newspaper(guild: discord.Guild, week: int, since) -> str:
+    async def build_newspaper(guild: discord.Guild, week: int, since,
+                              next_week: int | None = None, next_games: list | None = None) -> str:
+        next_games = next_games or []
         scores_ch = discord.utils.get(guild.text_channels, name=SCORES_CHANNEL)
         reports = []
         if scores_ch is not None:
@@ -536,7 +607,8 @@ def main() -> None:
                     banter_lines.append(f"{m.author.display_name}: {txt}")
         banter = "\n".join(banter_lines[-80:])
 
-        ai = await ai_recap(week, games, images, recruit_images, heisman_images, banter)
+        ai = await ai_recap(week, games, images, recruit_images, heisman_images, banter,
+                            next_week, next_games)
         if ai:
             return ai
         # Fallback: parse text score lines from #score-reporting.
@@ -560,7 +632,70 @@ def main() -> None:
         if pending:
             lines.append("")
             lines.append("📋 Still to report: " + ", ".join(f"{a} @ {h}" for h, a, _ in pending))
+        if next_games:
+            lines.append("")
+            lines.append(f"## 🔥 Key Matchups — Week {next_week}")
+            for home, away in next_games[:3]:
+                lines.append(f"• **{away}** at **{home}**")
         return "\n".join(lines)
+
+    async def build_preseason(guild: discord.Guild) -> str:
+        """Preseason paper — scans recent recruiting/heisman/chat (no results) + the opening slate."""
+        async def collect_images(channel_name: str, cap: int) -> list:
+            ch = discord.utils.get(guild.text_channels, name=channel_name)
+            out = []
+            if ch is None:
+                return out
+            async for m in ch.history(limit=200):
+                for att in m.attachments:
+                    if att.content_type and att.content_type.startswith("image/") and len(out) < cap:
+                        try:
+                            out.append((att.content_type, await att.read()))
+                        except Exception:
+                            pass
+            return out
+
+        recruit_images = await collect_images(RECRUITING_CHANNEL, 8)
+        heisman_images = await collect_images(HEISMAN_CHANNEL, 6)
+
+        banter_lines = []
+        for cname in TRASH_CHANNELS:
+            ch = discord.utils.get(guild.text_channels, name=cname)
+            if ch is None:
+                continue
+            async for m in ch.history(limit=200):
+                if m.author.bot:
+                    continue
+                txt = " ".join(m.content.split())
+                if 3 <= len(txt) <= 300:
+                    banter_lines.append(f"{m.author.display_name}: {txt}")
+        banter = "\n".join(banter_lines[-80:])
+
+        schedule = load_schedule()
+        weeks = sorted(int(w) for w in schedule if w.isdigit())
+        opener_week = weeks[0] if weeks else None
+        opener_games = schedule[str(opener_week)] if opener_week is not None else []
+
+        ai = await ai_preseason(recruit_images, heisman_images, banter, opener_week, opener_games)
+        if ai:
+            return ai
+        # Fallback text edition.
+        lines = ["# 📰 The Dynasty Dispatch — Preseason", "*The season's almost here.*", ""]
+        if opener_games:
+            lines.append(f"## 🔥 Season Openers — Week {opener_week}")
+            for home, away in opener_games[:3]:
+                lines.append(f"• **{away}** at **{home}**")
+        else:
+            lines.append("*Set your rosters — kickoff is coming.*")
+        return "\n".join(lines)
+
+    async def do_preseason(guild: discord.Guild) -> str:
+        news_ch = discord.utils.get(guild.text_channels, name=NEWS_CHANNEL)
+        if news_ch is None:
+            return "no #league-news channel"
+        paper = await build_preseason(guild)
+        await news_ch.send(paper, allowed_mentions=discord.AllowedMentions.none())
+        return "preseason edition posted to #league-news"
 
     async def do_advance(guild: discord.Guild, force: bool) -> str:
         """Post last week's recap (from scores) + the next week's matchups. Returns a status line."""
@@ -586,12 +721,15 @@ def main() -> None:
         if not force and last_time and (discord.utils.utcnow() - last_time).total_seconds() < ADVANCE_HOURS * 3600:
             return "too soon since the last advance"
 
+        upcoming = [w for w in weeks if w > last_week]
+        next_week = upcoming[0] if upcoming else None
+        next_games = schedule[str(next_week)] if next_week is not None else []
+
         news_ch = discord.utils.get(guild.text_channels, name=NEWS_CHANNEL)
         if news_ch is not None:
-            paper = await build_newspaper(guild, last_week, last_time)
+            paper = await build_newspaper(guild, last_week, last_time, next_week, next_games)
             await news_ch.send(paper, allowed_mentions=discord.AllowedMentions.none())
 
-        upcoming = [w for w in weeks if w > last_week]
         if not upcoming:
             return f"posted Week {last_week} recap — season complete, no more weeks"
         await post_week(guild, uch, upcoming[0], schedule[str(upcoming[0])])
@@ -726,14 +864,18 @@ def main() -> None:
     async def on_message(message: discord.Message) -> None:
         if message.author.bot or message.guild is None:
             return
-        if message.content.strip().lower() != "!advance":
+        cmd = message.content.strip().lower()
+        if cmd not in ("!advance", "!preseason"):
             return
         roles = getattr(message.author, "roles", [])
         if not any(r.name in COMMISH_ROLES for r in roles):
-            await message.reply("Only commissioners can run `!advance`.", mention_author=False)
+            await message.reply(f"Only commissioners can run `{cmd}`.", mention_author=False)
             return
         async with roster_lock:  # serialize with board refreshes
-            status = await do_advance(message.guild, force=True)
+            if cmd == "!preseason":
+                status = await do_preseason(message.guild)
+            else:
+                status = await do_advance(message.guild, force=True)
         await message.reply(f"⏩ {status}", mention_author=False)
 
     client.run(token)
