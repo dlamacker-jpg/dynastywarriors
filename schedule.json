@@ -1,4 +1,14 @@
 {
-  "_comment": "Season schedule of USER-vs-USER games, keyed by week number (string). Each game is [home_team, away_team], both teams controlled by coaches. The bot posts each week's matchups in #user-game-coordination on the 48-hour advance cadence and tags both coaches. Leave empty until the schedule is set. Example: \"1\": [[\"Ohio State\", \"LSU\"], [\"Texas\", \"Oregon\"]]",
-  "_weeks": {}
+  "_comment": "SAMPLE test schedule — replace with the real one from your team screenshots/video. Keyed by week (string); each game is [home_team, away_team], both user teams. The bot posts each week's matchups in #user-game-coordination on the 48h advance cadence and @tags both coaches (plain bold name if a coach hasn't joined yet).",
+  "1": [
+    ["Ohio State", "LSU"],
+    ["Texas", "Oregon"],
+    ["Georgia", "Alabama"],
+    ["Michigan", "USC"],
+    ["Notre Dame", "Ole Miss"],
+    ["Oklahoma", "Texas A&M"],
+    ["Penn State", "Iowa"],
+    ["Florida", "South Carolina"],
+    ["Miami", "Florida State"]
+  ]
 }
