@@ -56,6 +56,7 @@ ADVANCE_HOURS = 48                           # post the next week every 48h (the
 MATCHUPS_MARKER = "🏈 Week"                    # used to find the last posted week
 NEWS_CHANNEL = "league-news"                 # where the weekly recap ("newspaper") posts
 SCORES_CHANNEL = "score-reporting"           # read for results to build the recap
+RECRUITING_CHANNEL = "recruiting"            # read for recruiting screenshots (commits, portal, rankings)
 COMMISH_ROLES = ("Commissioner", "Co-Commissioner")  # who may run !advance
 QUIET_MODE = False  # LIVE: matchup posts and active checks ping coaches.
 TEAMS_FILE = Path(__file__).with_name("teams_fbs.json")
@@ -175,34 +176,47 @@ def pack(items: list[str], limit: int = 1900) -> list[str]:
     return blocks
 
 
-async def ai_recap(week: int, games: list, images: list) -> str | None:
-    """Send box-score photos to Claude (vision) and get back a written recap, or None."""
-    if anthropic is None or not os.environ.get("ANTHROPIC_API_KEY") or not images:
+def _img_block(media_type: str, data: bytes) -> dict:
+    return {
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": media_type,
+            "data": base64.standard_b64encode(data).decode(),
+        },
+    }
+
+
+async def ai_recap(week: int, games: list, images: list, recruit_images: list | None = None) -> str | None:
+    """Send box-score (and recruiting) photos to Claude (vision) for a written recap, or None."""
+    recruit_images = recruit_images or []
+    if anthropic is None or not os.environ.get("ANTHROPIC_API_KEY") or not (images or recruit_images):
         return None
-    content = [
-        {
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": media_type,
-                "data": base64.standard_b64encode(data).decode(),
-            },
-        }
-        for media_type, data in images
-    ]
+    content: list = []
+    if images:
+        content.append({"type": "text", "text": "=== BOX-SCORE PHOTOS (game results) ==="})
+        content += [_img_block(mt, d) for mt, d in images]
+    if recruit_images:
+        content.append({"type": "text", "text": "=== RECRUITING SCREENSHOTS (commits, transfer portal, rankings) ==="})
+        content += [_img_block(mt, d) for mt, d in recruit_images]
     matchups = "\n".join(f"- {a} at {h}" for h, a in games) or "(none)"
     content.append({
         "type": "text",
         "text": (
             "You are the beat writer for 'The Dynasty Dispatch', the newspaper of a College Football 27 "
-            f"online dynasty. The attached photos are box scores (often phone photos of a TV) from Week {week}. "
-            f"This week's user-vs-user matchups are:\n{matchups}\n\n"
-            "Read each box score, match it to one of the matchups above, and write a short, lively recap. "
-            f"Format as Discord markdown starting with the line '# 📰 The Dynasty Dispatch — Week {week}'. "
-            "For each game you can read: one bullet with the winner in **bold**, the final score, and one "
-            "sentence of color using real stats from the box score (yards, turnovers, big plays). Keep the whole "
-            "thing under 1800 characters. List any listed matchup with no readable box score under a short "
-            "'Still to report' line. Only cover the matchups listed above."
+            f"online dynasty. Two kinds of photos may be attached above, each under its own labeled header: "
+            "box-score photos (often phone photos of a TV) and recruiting screenshots (commits, transfer "
+            f"portal moves, recruiting-class rankings).\n\nThis week's user-vs-user matchups are:\n{matchups}\n\n"
+            f"Write a short, lively recap in Discord markdown starting with '# 📰 The Dynasty Dispatch — Week {week}'.\n"
+            "**Game results** — under a '## 🏈 On the Field' header, read each box score, match it to one of the "
+            "matchups above, and give one bullet per game: winner in **bold**, the final score, and one sentence of "
+            "color using real stats (yards, turnovers, big plays). List any matchup with no readable box score on a "
+            "short 'Still to report' line. Only cover the matchups listed above.\n"
+            "**Recruiting** — if any recruiting screenshots are attached, add a '## 📈 Recruiting Trail' header and "
+            "2-5 bullets summarizing what they show (school landing a commit with the recruit's name/stars/position, "
+            "portal adds or losses, class-ranking movement). Bold the school. If no recruiting screenshots are "
+            "attached, omit this section entirely — do not invent recruiting news.\n"
+            "Keep the whole thing under 1900 characters."
         ),
     })
     try:
@@ -465,6 +479,20 @@ def main() -> None:
         games = load_schedule().get(str(week), [])
 
         # Preferred path: let Claude read the box-score photos and write the recap.
+        async def collect_images(channel_name: str, cap: int) -> list:
+            ch = discord.utils.get(guild.text_channels, name=channel_name)
+            out = []
+            if ch is None:
+                return out
+            async for m in ch.history(limit=300, after=since):
+                for att in m.attachments:
+                    if att.content_type and att.content_type.startswith("image/") and len(out) < cap:
+                        try:
+                            out.append((att.content_type, await att.read()))
+                        except Exception:
+                            pass
+            return out
+
         images = []
         for m in reports:
             for att in m.attachments:
@@ -473,7 +501,8 @@ def main() -> None:
                         images.append((att.content_type, await att.read()))
                     except Exception:
                         pass
-        ai = await ai_recap(week, games, images)
+        recruit_images = await collect_images(RECRUITING_CHANNEL, 8)
+        ai = await ai_recap(week, games, images, recruit_images)
         if ai:
             return ai
         # Fallback: parse text score lines from #score-reporting.
