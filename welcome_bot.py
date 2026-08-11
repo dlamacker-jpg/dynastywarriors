@@ -66,6 +66,7 @@ ACTIVE_CHECK_DAYS = 3                     # how often it goes out
 ACTIVE_CHECK_EMOJI = "👍"                  # reaction coaches use to confirm
 ACTIVE_CHECK_MARKER = "🚨 ACTIVE CHECK"    # used to find the previous check
 MATCHUPS_CHANNEL = "user-game-coordination"  # where weekly user games are posted
+GAME_ROOMS_CATEGORY = "This Week's Games"     # temp per-matchup channels live here; cleared each advance
 ADVANCE_HOURS = 48                           # post the next week every 48h (the force-advance cadence)
 MATCHUPS_MARKER = "🏈 Week"                    # used to find the last posted week
 NEWS_CHANNEL = "league-news"                 # where the weekly recap ("newspaper") posts
@@ -697,6 +698,64 @@ def main() -> None:
         )
         await channel.send("\n".join(lines), allowed_mentions=allowed)
 
+    def member_for_team(guild: discord.Guild, team: str):
+        target = normalize(team)
+        for m in guild.members:
+            if not m.bot and resolve_team(m.display_name) == target:
+                return m
+        return None
+
+    def _room_name(week, away: str, home: str) -> str:
+        slug = lambda s: re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+        return f"wk{week}-{slug(away)}-at-{slug(home)}"[:95]
+
+    async def clear_game_rooms(guild: discord.Guild) -> None:
+        """Delete last week's per-matchup channels (they die at the next advance)."""
+        cat = discord.utils.get(guild.categories, name=GAME_ROOMS_CATEGORY)
+        if cat is None:
+            return
+        for ch in list(cat.channels):
+            try:
+                await ch.delete(reason="Advance — last week's game rooms expire")
+            except Exception:
+                pass
+
+    async def create_game_rooms(guild: discord.Guild, week, games: list) -> None:
+        """Spin up a private channel per user-vs-user matchup for coordination."""
+        pairs = [(h, a, member_for_team(guild, h), member_for_team(guild, a)) for h, a in games]
+        pairs = [(h, a, hm, am) for h, a, hm, am in pairs if hm is not None and am is not None]
+        if not pairs:
+            return
+        cat = discord.utils.get(guild.categories, name=GAME_ROOMS_CATEGORY)
+        if cat is None:
+            try:
+                cat = await guild.create_category(GAME_ROOMS_CATEGORY)
+            except Exception:
+                return
+        commish = [r for r in guild.roles if r.name in COMMISH_ROLES]
+        me = guild.me
+        for home, away, hm, am in pairs:
+            ow = {guild.default_role: discord.PermissionOverwrite(view_channel=False)}
+            if me is not None:
+                ow[me] = discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_channels=True)
+            for r in commish:
+                ow[r] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            for mem in (hm, am):
+                ow[mem] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            try:
+                ch = await guild.create_text_channel(
+                    _room_name(week, away, home), category=cat, overwrites=ow,
+                    topic=f"Week {week}: {away} @ {home} — coordinate here. Closes at the next advance.",
+                )
+                await ch.send(
+                    f"🏈 **Week {week}: {away} @ {home}**\n{am.mention} vs {hm.mention} — lock in a time for your "
+                    "game here. Report the final score + box score in #score-reporting. "
+                    "This room closes when the commish advances.",
+                    allowed_mentions=discord.AllowedMentions(users=True),
+                )
+            except Exception as exc:
+                print(f"Game room create failed ({away}@{home}): {exc}")
+
     def find_team_pos(text_lower: str, team: str):
         """Character index where `team` (name or alias) first appears in the text, or None."""
         best = None
@@ -909,6 +968,8 @@ def main() -> None:
 
         if last_week is None:  # season kickoff — no prior week to recap
             await post_week(guild, uch, weeks[0], schedule[str(weeks[0])])
+            await clear_game_rooms(guild)
+            await create_game_rooms(guild, weeks[0], schedule[str(weeks[0])])
             return f"kicked off — posted Week {weeks[0]}"
         if not force and last_time and (discord.utils.utcnow() - last_time).total_seconds() < ADVANCE_HOURS * 3600:
             return "too soon since the last advance"
@@ -928,9 +989,11 @@ def main() -> None:
                 if png:
                     await news_ch.send(file=discord.File(io.BytesIO(png), filename=f"gotw-week-{next_week}.png"))
 
+        await clear_game_rooms(guild)  # last week's coordination rooms expire
         if not upcoming:
             return f"posted Week {last_week} recap — season complete, no more weeks"
         await post_week(guild, uch, upcoming[0], schedule[str(upcoming[0])])
+        await create_game_rooms(guild, upcoming[0], schedule[str(upcoming[0])])
         return f"Week {last_week} recap posted + Week {upcoming[0]} matchups are up"
 
     @tasks.loop(hours=3)
