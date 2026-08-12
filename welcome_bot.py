@@ -80,7 +80,7 @@ RECRUITING_CHANNEL = "recruiting"            # read for recruiting screenshots (
 HEISMAN_CHANNEL = "heisman"                   # read for Heisman-race / stat-leader screenshots
 TRASH_CHANNELS = ("general", "user-game-coordination")  # scanned for quotable trash talk
 COMMISH_ROLES = ("Commissioner", "Co-Commissioner")  # who may run !advance
-QUIET_MODE = False  # LIVE: matchup posts and active checks ping coaches.
+QUIET_MODE = True  # QUIET: no pings anywhere (matchups, active checks, league-news @everyone, game rooms).
 TEAMS_FILE = Path(__file__).with_name("teams_fbs.json")
 RESERVED_FILE = Path(__file__).with_name("reserved.json")
 ALIASES_FILE = Path(__file__).with_name("aliases.json")
@@ -844,7 +844,8 @@ def main() -> None:
                     f"🏈 **Week {week}: {away} @ {home}**\n{am.mention} vs {hm.mention} — lock in a time for your "
                     "game here. Report the final score + box score in #score-reporting. "
                     "This room closes when the commish advances.",
-                    allowed_mentions=discord.AllowedMentions(users=True),
+                    allowed_mentions=(discord.AllowedMentions.none() if QUIET_MODE
+                                      else discord.AllowedMentions(users=True)),
                 )
             except Exception as exc:
                 print(f"Game room create failed ({away}@{home}): {exc}")
@@ -1128,14 +1129,16 @@ def main() -> None:
         png, data, _ = await build_dispatch_image(guild, "Preseason", [], opener_games, None)
         if png:
             await news_ch.send(
-                content="@everyone 📰 **The Dynasty Dispatch — Preseason** is out!",
+                content=("📰 **The Dynasty Dispatch — Preseason** is out!" if QUIET_MODE
+                         else "@everyone 📰 **The Dynasty Dispatch — Preseason** is out!"),
                 file=discord.File(io.BytesIO(png), filename="dispatch-preseason.png"),
-                allowed_mentions=discord.AllowedMentions(everyone=True),
+                allowed_mentions=(discord.AllowedMentions.none() if QUIET_MODE
+                                  else discord.AllowedMentions(everyone=True)),
             )
             return "preseason newspaper posted to #league-news"
         # fallbacks: text paper + matchup card
         paper = await build_preseason(guild)
-        await send_paper(news_ch, paper, ping=True)
+        await send_paper(news_ch, paper, ping=not QUIET_MODE)
         card_png = await make_matchup_graphic("Preseason", opener_games, paper)
         if card_png:
             await news_ch.send(file=discord.File(io.BytesIO(card_png), filename="dispatch-preseason.png"))
@@ -1179,16 +1182,18 @@ def main() -> None:
             png, data, _ = await build_dispatch_image(guild, last_week, last_games, next_games, last_time)
             if png:
                 await news_ch.send(
-                    content=f"@everyone 📰 **The Dynasty Dispatch — Week {last_week}** is out!",
+                    content=("📰 **The Dynasty Dispatch — Week %d** is out!" % last_week if QUIET_MODE
+                             else f"@everyone 📰 **The Dynasty Dispatch — Week {last_week}** is out!"),
                     file=discord.File(io.BytesIO(png), filename=f"dispatch-week-{last_week}.png"),
-                    allowed_mentions=discord.AllowedMentions(everyone=True),
+                    allowed_mentions=(discord.AllowedMentions.none() if QUIET_MODE
+                                      else discord.AllowedMentions(everyone=True)),
                 )
             else:
                 # Fallback: text recap + Game-of-the-Week card.
                 paper, results = await build_newspaper(guild, last_week, last_time, next_week, next_games)
                 if results:
                     standings.record_week(last_week, results)
-                await send_paper(news_ch, paper, ping=True)
+                await send_paper(news_ch, paper, ping=not QUIET_MODE)
                 if next_games:
                     gcard = await make_matchup_graphic(next_week, next_games, paper)
                     if gcard:
