@@ -1009,8 +1009,11 @@ def main() -> None:
             lines.append("*Set your rosters — kickoff is coming.*")
         return "\n".join(lines)
 
-    async def send_paper(channel: discord.TextChannel, text: str) -> None:
-        """Send a paper to a channel, splitting on line breaks to respect Discord's 2000-char limit."""
+    async def send_paper(channel: discord.TextChannel, text: str, ping: bool = False) -> None:
+        """Send a paper to a channel, splitting on line breaks to respect Discord's 2000-char limit.
+
+        When ping=True the first chunk @everyone's the league.
+        """
         chunks, buf = [], ""
         for line in text.split("\n"):
             if len(buf) + len(line) + 1 > 1990:
@@ -1021,8 +1024,12 @@ def main() -> None:
                 buf = f"{buf}\n{line}" if buf else line
         if buf:
             chunks.append(buf)
-        for chunk in chunks:
-            await channel.send(chunk, allowed_mentions=discord.AllowedMentions.none())
+        for i, chunk in enumerate(chunks):
+            if ping and i == 0:
+                await channel.send("@everyone\n" + chunk,
+                                   allowed_mentions=discord.AllowedMentions(everyone=True))
+            else:
+                await channel.send(chunk, allowed_mentions=discord.AllowedMentions.none())
 
     def user_team_list() -> list:
         teams = set()
@@ -1120,11 +1127,15 @@ def main() -> None:
         opener_games = schedule[str(weeks[0])] if weeks else []
         png, data, _ = await build_dispatch_image(guild, "Preseason", [], opener_games, None)
         if png:
-            await news_ch.send(file=discord.File(io.BytesIO(png), filename="dispatch-preseason.png"))
+            await news_ch.send(
+                content="@everyone 📰 **The Dynasty Dispatch — Preseason** is out!",
+                file=discord.File(io.BytesIO(png), filename="dispatch-preseason.png"),
+                allowed_mentions=discord.AllowedMentions(everyone=True),
+            )
             return "preseason newspaper posted to #league-news"
         # fallbacks: text paper + matchup card
         paper = await build_preseason(guild)
-        await send_paper(news_ch, paper)
+        await send_paper(news_ch, paper, ping=True)
         card_png = await make_matchup_graphic("Preseason", opener_games, paper)
         if card_png:
             await news_ch.send(file=discord.File(io.BytesIO(card_png), filename="dispatch-preseason.png"))
@@ -1167,13 +1178,17 @@ def main() -> None:
             # Primary: the full broadcast newspaper image.
             png, data, _ = await build_dispatch_image(guild, last_week, last_games, next_games, last_time)
             if png:
-                await news_ch.send(file=discord.File(io.BytesIO(png), filename=f"dispatch-week-{last_week}.png"))
+                await news_ch.send(
+                    content=f"@everyone 📰 **The Dynasty Dispatch — Week {last_week}** is out!",
+                    file=discord.File(io.BytesIO(png), filename=f"dispatch-week-{last_week}.png"),
+                    allowed_mentions=discord.AllowedMentions(everyone=True),
+                )
             else:
                 # Fallback: text recap + Game-of-the-Week card.
                 paper, results = await build_newspaper(guild, last_week, last_time, next_week, next_games)
                 if results:
                     standings.record_week(last_week, results)
-                await send_paper(news_ch, paper)
+                await send_paper(news_ch, paper, ping=True)
                 if next_games:
                     gcard = await make_matchup_graphic(next_week, next_games, paper)
                     if gcard:
