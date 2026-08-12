@@ -95,5 +95,9 @@
   "Texas Tech": {
     "primary": "#CC0000",
     "secondary": "#000000"
+  },
+  "Nebraska": {
+    "primary": "#E41C38",
+    "secondary": "#F5F1E7"
   }
 }
