@@ -1074,7 +1074,9 @@ def main() -> None:
 
     async def build_dispatch_image(guild: discord.Guild, week, this_games, next_games, since):
         """Render the full broadcast newspaper PNG. Returns (png|None, data|None, results)."""
+        global _last_ai_error
         if dispatch_render is None:
+            _last_ai_error = "dispatch_render module failed to import on the host"
             return None, None, []
         images, recruit, heis, banter = await gather_media(guild, since)
         tl = user_team_list()
@@ -1097,6 +1099,9 @@ def main() -> None:
         except Exception as exc:
             print(f"Dispatch build_html/render failed: {exc}")
             png = None
+        if png is None and not _last_ai_error:
+            _last_ai_error = ("paper written OK but image render returned nothing — check HCTI_USER_ID/"
+                              "HCTI_API_KEY and the 'Dispatch API render' log line")
         return png, data, results
 
     def data_to_text(data: dict, week_label: str) -> str:
