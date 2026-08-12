@@ -1058,6 +1058,11 @@ def main() -> None:
             if isinstance(games, list):
                 for pair in games:
                     teams.update(pair)
+        try:  # user teams with all-CPU schedules (no user games) still belong in the standings
+            extra = json.loads(Path(__file__).with_name("extra_users.json").read_text()).get("teams", [])
+            teams.update(extra)
+        except Exception:
+            pass
         return sorted(teams)
 
     async def gather_media(guild: discord.Guild, since):
