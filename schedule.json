@@ -1,17 +1,307 @@
 {
-  "_comment": "Season schedule of USER-vs-USER games, keyed by week (string). Each game is [home_team, away_team]. Compiled from team schedule screenshots + reschedules. The bot posts each week's matchups in #user-game-coordination on the 48h advance cadence and @tags both coaches. Florida State is a user team again — its 5 games are back in (Oklahoma also remains a user team).",
-  "0": [["Florida State", "Oklahoma"], ["Texas A&M", "USC"], ["Michigan", "Florida"]],
-  "1": [["Ohio State", "LSU"], ["Iowa", "Oklahoma"], ["Oregon", "Texas"], ["Alabama", "Penn State"], ["Michigan", "South Carolina"], ["Florida", "USC"], ["Texas A&M", "Clemson"]],
-  "2": [["Texas", "Ohio State"], ["Duke", "Michigan"], ["Georgia", "Oregon"], ["LSU", "Clemson"], ["Penn State", "Miami"], ["Alabama", "Indiana"]],
-  "3": [["LSU", "Ole Miss"], ["Notre Dame", "Penn State"], ["South Carolina", "Iowa"], ["Ohio State", "Alabama"], ["Texas", "Florida State"]],
-  "4": [["Oklahoma", "Georgia"], ["Duke", "Ole Miss"], ["USC", "Oregon"], ["South Carolina", "Alabama"], ["Texas A&M", "LSU"], ["Florida", "Notre Dame"], ["Michigan", "Iowa"]],
-  "5": [["Iowa", "Ohio State"], ["Ole Miss", "Alabama"], ["Georgia", "Texas A&M"], ["LSU", "Duke"], ["Clemson", "Miami"]],
-  "6": [["Ole Miss", "South Carolina"], ["Penn State", "USC"], ["Miami", "Oklahoma"]],
-  "7": [["Notre Dame", "Oklahoma"], ["Michigan", "Penn State"], ["LSU", "South Carolina"], ["Florida", "Texas"], ["Miami", "Florida State"], ["Indiana", "Ohio State"]],
-  "8": [["Texas", "Ole Miss"], ["Alabama", "Texas A&M"], ["Georgia", "Notre Dame"], ["Michigan", "Indiana"]],
-  "9": [["USC", "Ohio State"], ["Florida", "Georgia"], ["Florida State", "Clemson"]],
-  "10": [["Ohio State", "Oregon"], ["Oklahoma", "Florida"], ["Georgia", "Ole Miss"], ["South Carolina", "Texas A&M"], ["USC", "Notre Dame"], ["Alabama", "LSU"]],
-  "11": [["Oregon", "Michigan"], ["Texas", "Notre Dame"], ["Miami", "Duke"], ["Indiana", "USC"]],
-  "12": [["Oklahoma", "Texas A&M"], ["Notre Dame", "Alabama"], ["Duke", "Clemson"]],
-  "13": [["Ohio State", "Michigan"], ["Texas A&M", "Texas"], ["Clemson", "South Carolina"], ["Florida State", "Florida"]]
+  "_comment": "Season schedule of USER-vs-USER games, keyed by week (string). Each game is [home, away]. FSU left (coach->Texas Tech). Tennessee & UCLA added as user teams; their former-CPU games vs existing coaches are now user games. Texas Tech schedule still needed.",
+  "0": [
+    [
+      "Texas A&M",
+      "USC"
+    ],
+    [
+      "Michigan",
+      "Florida"
+    ]
+  ],
+  "1": [
+    [
+      "Ohio State",
+      "LSU"
+    ],
+    [
+      "Iowa",
+      "Oklahoma"
+    ],
+    [
+      "Oregon",
+      "Texas"
+    ],
+    [
+      "Alabama",
+      "Penn State"
+    ],
+    [
+      "Michigan",
+      "South Carolina"
+    ],
+    [
+      "Florida",
+      "USC"
+    ],
+    [
+      "Texas A&M",
+      "Clemson"
+    ]
+  ],
+  "2": [
+    [
+      "Texas",
+      "Ohio State"
+    ],
+    [
+      "Duke",
+      "Michigan"
+    ],
+    [
+      "Georgia",
+      "Oregon"
+    ],
+    [
+      "LSU",
+      "Clemson"
+    ],
+    [
+      "Penn State",
+      "Miami"
+    ],
+    [
+      "Alabama",
+      "Indiana"
+    ]
+  ],
+  "3": [
+    [
+      "LSU",
+      "Ole Miss"
+    ],
+    [
+      "Notre Dame",
+      "Penn State"
+    ],
+    [
+      "South Carolina",
+      "Iowa"
+    ],
+    [
+      "Ohio State",
+      "Alabama"
+    ]
+  ],
+  "4": [
+    [
+      "Oklahoma",
+      "Georgia"
+    ],
+    [
+      "Duke",
+      "Ole Miss"
+    ],
+    [
+      "USC",
+      "Oregon"
+    ],
+    [
+      "South Carolina",
+      "Alabama"
+    ],
+    [
+      "Texas A&M",
+      "LSU"
+    ],
+    [
+      "Florida",
+      "Notre Dame"
+    ],
+    [
+      "Michigan",
+      "Iowa"
+    ],
+    [
+      "Tennessee",
+      "Texas"
+    ]
+  ],
+  "5": [
+    [
+      "Iowa",
+      "Ohio State"
+    ],
+    [
+      "Ole Miss",
+      "Alabama"
+    ],
+    [
+      "Georgia",
+      "Texas A&M"
+    ],
+    [
+      "LSU",
+      "Duke"
+    ],
+    [
+      "Clemson",
+      "Miami"
+    ]
+  ],
+  "6": [
+    [
+      "Ole Miss",
+      "South Carolina"
+    ],
+    [
+      "Penn State",
+      "USC"
+    ],
+    [
+      "Miami",
+      "Oklahoma"
+    ],
+    [
+      "Oregon",
+      "UCLA"
+    ]
+  ],
+  "7": [
+    [
+      "Notre Dame",
+      "Oklahoma"
+    ],
+    [
+      "Michigan",
+      "Penn State"
+    ],
+    [
+      "LSU",
+      "South Carolina"
+    ],
+    [
+      "Florida",
+      "Texas"
+    ],
+    [
+      "Indiana",
+      "Ohio State"
+    ],
+    [
+      "Alabama",
+      "Tennessee"
+    ]
+  ],
+  "8": [
+    [
+      "Texas",
+      "Ole Miss"
+    ],
+    [
+      "Alabama",
+      "Texas A&M"
+    ],
+    [
+      "Georgia",
+      "Notre Dame"
+    ],
+    [
+      "Michigan",
+      "Indiana"
+    ],
+    [
+      "South Carolina",
+      "Tennessee"
+    ]
+  ],
+  "9": [
+    [
+      "USC",
+      "Ohio State"
+    ],
+    [
+      "Florida",
+      "Georgia"
+    ]
+  ],
+  "10": [
+    [
+      "Ohio State",
+      "Oregon"
+    ],
+    [
+      "Oklahoma",
+      "Florida"
+    ],
+    [
+      "Georgia",
+      "Ole Miss"
+    ],
+    [
+      "South Carolina",
+      "Texas A&M"
+    ],
+    [
+      "USC",
+      "Notre Dame"
+    ],
+    [
+      "Alabama",
+      "LSU"
+    ]
+  ],
+  "11": [
+    [
+      "Oregon",
+      "Michigan"
+    ],
+    [
+      "Texas",
+      "Notre Dame"
+    ],
+    [
+      "Miami",
+      "Duke"
+    ],
+    [
+      "Indiana",
+      "USC"
+    ],
+    [
+      "Texas A&M",
+      "Tennessee"
+    ]
+  ],
+  "12": [
+    [
+      "Oklahoma",
+      "Texas A&M"
+    ],
+    [
+      "Notre Dame",
+      "Alabama"
+    ],
+    [
+      "Duke",
+      "Clemson"
+    ],
+    [
+      "Tennessee",
+      "LSU"
+    ],
+    [
+      "Michigan",
+      "UCLA"
+    ]
+  ],
+  "13": [
+    [
+      "Ohio State",
+      "Michigan"
+    ],
+    [
+      "Texas A&M",
+      "Texas"
+    ],
+    [
+      "Clemson",
+      "South Carolina"
+    ],
+    [
+      "UCLA",
+      "USC"
+    ]
+  ]
 }
