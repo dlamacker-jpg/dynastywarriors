@@ -157,7 +157,8 @@ async def _render_via_api(html_str: str, width: int) -> bytes | None:
     try:
         import aiohttp
         auth = aiohttp.BasicAuth(uid, key)
-        payload = {"html": html_str, "device_scale": 2, "viewport_width": width + 40, "selector": ".wrap"}
+        payload = {"html": html_str, "device_scale": 2, "viewport_width": width + 40, "selector": ".wrap",
+                   "google_fonts": "Anton|Oswald|Kaushan Script|Playfair Display", "ms_delay": 500}
         async with aiohttp.ClientSession() as s:
             async with s.post("https://hcti.io/v1/image", data=payload, auth=auth) as r:
                 if r.status not in (200, 201):
@@ -200,10 +201,10 @@ _SHELL = r"""<title>{title}</title>
     --panel:#170f0e; --panel2:#1e1412; --oxblood:#3a1416; --oxblood2:#280d0e;
     --edge:#5a2321; --edge-soft:rgba(230,194,92,.20); --crimson:#b3121a; --crimson-br:#e12a1e;
     --gold:#e6c25c; --gold-dim:#b6923f; --cream:#efe6d4; --muted:#a89584; --muted-dim:#79685b;
-    --display:'Impact','Haettenschweiler','Franklin Gothic Bold','Arial Narrow Bold',sans-serif;
-    --cond:'Arial Narrow','Roboto Condensed',system-ui,sans-serif;
-    --brush:'Brush Script MT','Segoe Script','Bradley Hand',cursive;
-    --serif:'Iowan Old Style','Palatino Linotype','Georgia',serif;
+    --display:'Anton','Impact','Haettenschweiler','Arial Narrow Bold',sans-serif;
+    --cond:'Oswald','Arial Narrow','Roboto Condensed',system-ui,sans-serif;
+    --brush:'Kaushan Script','Brush Script MT','Segoe Script',cursive;
+    --serif:'Playfair Display','Iowan Old Style','Palatino Linotype','Georgia',serif;
   }}
   *{{box-sizing:border-box}}
   body{{margin:0}}
@@ -221,7 +222,7 @@ _SHELL = r"""<title>{title}</title>
   .mast{{display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:16px}}
   .crest{{width:96px; height:104px}} .crest svg{{width:100%; height:100%; filter:drop-shadow(0 4px 6px rgba(0,0,0,.6))}}
   .title{{padding-top:14px}}
-  .title .wm{{font-family:var(--display); font-size:70px; line-height:.8; transform:scaleY(1.14); transform-origin:left;
+  .title .wm{{font-family:var(--display); font-size:66px; line-height:.82; transform-origin:left;
     text-transform:uppercase; color:var(--cream); text-shadow:2px 3px 0 rgba(0,0,0,.5)}}
   .title .wm em{{font-family:var(--brush); font-style:normal; color:var(--crimson-br); text-transform:none; font-size:78px; margin-left:6px}}
   .title .sub{{font-size:12px; letter-spacing:.34em; text-transform:uppercase; color:var(--gold-dim); margin-top:12px}}
@@ -234,7 +235,7 @@ _SHELL = r"""<title>{title}</title>
   .rule-thin{{height:1px; background:var(--edge-soft); margin-top:3px}}
   .banner{{margin:14px 0 2px}}
   .banner .kicker{{font-family:var(--cond); letter-spacing:.32em; text-transform:uppercase; font-size:12px; color:var(--gold); text-align:center; margin-bottom:4px}}
-  .banner h1{{font-family:var(--display); text-transform:uppercase; transform:scaleY(1.14); font-size:clamp(34px,6vw,64px); line-height:.86; text-align:center; margin:.1em 0;
+  .banner h1{{font-family:var(--display); text-transform:uppercase; font-size:clamp(34px,6vw,64px); line-height:.9; text-align:center; margin:.1em 0;
     background:linear-gradient(180deg,#f6efdd,#d9b45f 65%,#a9832f); -webkit-background-clip:text; background-clip:text; color:transparent; text-wrap:balance}}
   .banner .dek{{font-family:var(--serif); font-style:italic; text-align:center; color:var(--muted); font-size:15px; max-width:74ch; margin:2px auto 0}}
   .banner .dek b{{color:var(--cream); font-style:normal; font-weight:600}}
