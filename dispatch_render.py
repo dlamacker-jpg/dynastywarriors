@@ -161,6 +161,31 @@ def _commish(text) -> str:
     return _panel("Commissioner's Corner", f'<p class="cmq">“{esc(text)}”</p>')
 
 
+def _scoreboard(x) -> str:
+    """Quarter-by-quarter hero for the single biggest game. Rendered only if a real line exists."""
+    if not isinstance(x, dict) or not (x.get("away") and x.get("home")):
+        return ""
+    al, hl = x.get("away_line") or [], x.get("home_line") or []
+    n = max(len(al), len(hl))
+    if n == 0:
+        return ""
+    at, ht = _num(x.get("away_total")), _num(x.get("home_total"))
+    aw = at is not None and ht is not None and at > ht
+    hw = at is not None and ht is not None and ht > at
+    cols = "".join(f"<th>{i+1}</th>" for i in range(n)) + "<th>T</th>"
+
+    def row(team, line, tot, win):
+        padded = (list(line) + [None] * n)[:n]
+        cells = "".join(f"<td>{_num(v) if _num(v) is not None else '—'}</td>" for v in padded)
+        return (f'<tr class="{"win" if win else ""}"><td class="tm">{esc(team)}</td>{cells}'
+                f'<td class="tot">{tot if tot is not None else "—"}</td></tr>')
+
+    note = f'<div class="sb-note">{esc(x.get("note",""))}</div>' if x.get("note") else ""
+    return (f'<div class="scoreboard"><div class="sb-head">★ {esc(x.get("venue",""))} · FINAL ★</div>'
+            f'<table class="sbt"><tr class="sb-cols"><th></th>{cols}</tr>'
+            f'{row(x.get("away"), al, at, aw)}{row(x.get("home"), hl, ht, hw)}</table>{note}</div>')
+
+
 def _panel(title, inner, pad=False) -> str:
     body = inner if pad else inner
     return (f'<section class="panel"><div class="shead"><h2>{esc(title)}</h2></div>'
@@ -171,6 +196,7 @@ def _panel(title, inner, pad=False) -> str:
 def build_html(data: dict) -> str:
     d = data or {}
     top = "".join(filter(None, [
+        _scoreboard(d.get("scoreboard")),
         _final_scores(d.get("final_scores", [])),
         _marquee(d.get("marquee", [])),
     ]))
@@ -305,6 +331,15 @@ _SHELL = r"""<title>{title}</title>
   .banner .dek{{font-family:var(--serif); font-style:italic; text-align:center; color:var(--muted); font-size:15px; max-width:74ch; margin:2px auto 0}}
   .banner .dek b{{color:var(--cream); font-style:normal; font-weight:600}}
   .fullwide{{display:flex; flex-direction:column; gap:16px; margin-top:14px}}
+  .scoreboard{{border:1px solid var(--edge); background:linear-gradient(180deg,#241211,#130909); padding:12px 18px; box-shadow:inset 0 0 0 1px rgba(0,0,0,.4)}}
+  .sb-head{{text-align:center; font-family:var(--display); font-style:italic; color:var(--gold); letter-spacing:.06em; font-size:18px; margin-bottom:8px}}
+  .sbt{{width:100%; border-collapse:collapse}}
+  .sbt th{{font-family:var(--cond); color:var(--gold-dim); font-size:12px; font-weight:normal; text-align:center; padding:3px 10px; border-bottom:1px solid var(--edge-soft)}}
+  .sbt td{{text-align:center; font-family:var(--cond); color:var(--muted); font-variant-numeric:tabular-nums; font-size:20px; padding:6px 10px}}
+  .sbt td.tm{{text-align:left; font-family:var(--display); font-style:italic; color:var(--muted); font-size:22px}}
+  .sbt tr.win td{{color:var(--cream)}} .sbt tr.win td.tm{{color:var(--cream)}}
+  .sbt td.tot{{font-family:var(--display); color:var(--gold); font-size:30px}}
+  .sb-note{{text-align:center; font-family:var(--serif); font-style:italic; color:var(--muted); font-size:12px; margin-top:8px; border-top:1px solid var(--edge-soft); padding-top:8px}}
   .sgrid{{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}}
   .sbx{{border:1px solid var(--edge); background:linear-gradient(180deg,#241211,#180d0c); padding:8px 11px}}
   .sbx-v{{font-family:var(--cond); text-transform:uppercase; letter-spacing:.14em; font-size:10px; color:var(--gold-dim); margin-bottom:4px}}
@@ -418,6 +453,10 @@ if __name__ == "__main__":  # local self-test: fill with sample data, write HTML
         "standings": [{"team": t, "rating": "—", "rec": "0–0"} for t in
                       ["Alabama", "Georgia", "Ohio State", "Oregon", "Michigan", "Texas"]],
         "line": [{"game": "LSU at Ohio State", "loc": "Ohio Stadium", "odds": "OSU −7.5"}],
+        "scoreboard": {
+            "away": "Penn State", "away_line": [7, 7, 14, 0], "away_total": 28,
+            "home": "Notre Dame", "home_line": [26, 14, 7, 17], "home_total": 64,
+            "venue": "Notre Dame Stadium", "note": "The Irish average 12.5 a snap in a home coronation."},
         "final_scores": [
             {"away": "Penn State", "away_score": 28, "home": "Notre Dame", "home_score": 64,
              "venue": "Notre Dame Stadium", "blurb": "The Irish average 12.5 a snap in a home coronation."},

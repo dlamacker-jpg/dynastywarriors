@@ -495,6 +495,7 @@ PAPER_SCHEMA = """{
  "headline": "<4-7 word front-page headline>",
  "kicker": "<3-5 word eyebrow above the headline>",
  "dek": "<1-2 sentence standfirst; may bold **teams** with markdown-style ** **>",
+ "scoreboard": {"away": "<team>", "away_line": [<int per quarter>], "away_total": <int>, "home": "<team>", "home_line": [<int per quarter>], "home_total": <int>, "venue": "<stadium>", "note": "<one line>"},
  "final_scores": [{"away": "<team>", "away_score": <int>, "home": "<team>", "home_score": <int>, "venue": "<stadium/city>", "blurb": "<one-line recap>"}],
  "power_rankings": [{"team": "<team>", "conf": "<SEC|Big Ten|ACC|Big 12>", "blurb": "<one witty line>"}],
  "storylines": [{"title": "<label>", "body": "<1-2 sentences>"}],
@@ -547,6 +548,9 @@ async def ai_paper(week_label: str, matchups: list, next_matchups: list, standin
         "provided, return an EMPTY list/string for that section — do not fabricate.\n"
         "• 'final_scores' = only games you can actually read a final score for in the photos (exact team names + "
         "the real integer scores). Empty list if none. Standings are derived from these winners.\n"
+        "• 'scoreboard' = the single biggest user game for which you can read a real QUARTER-BY-QUARTER line off a "
+        "box score (per-quarter points + total for each team). Use it as the hero. If no box score shows a "
+        "readable quarter line, set scoreboard to null — NEVER invent quarter splits.\n"
         f"• power_rankings, cfp_watch, storylines, top25 order, marquee, line, commissioner are EDITORIAL "
         "opinion/prediction — allowed, but must not state a fabricated final score or record. Rank the "
         f"{team_count} user teams; 8-10 power_rankings, up to 25 top25 (fill 'rec' from standings, else 0-0).\n"
