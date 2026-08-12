@@ -104,6 +104,63 @@ def _media(quote) -> str:
     return _panel("From the Media Desk", inner)
 
 
+def _num(v):
+    return int(v) if isinstance(v, (int, float)) else None
+
+
+def _final_scores(items) -> str:
+    if not items:
+        return ""
+    boxes = []
+    for x in items[:6]:
+        a, h = esc(x.get("away")), esc(x.get("home"))
+        asc, hsc = _num(x.get("away_score")), _num(x.get("home_score"))
+        have = asc is not None and hsc is not None
+        aw = "win" if have and asc > hsc else ""
+        hw = "win" if have and hsc > asc else ""
+        sa = str(asc) if have else "—"
+        sh = str(hsc) if have else "—"
+        boxes.append(
+            f'<div class="sbx"><div class="sbx-v">{esc(x.get("venue",""))}</div>'
+            f'<div class="sbx-r {aw}"><span>{a}</span><b>{sa}</b></div>'
+            f'<div class="sbx-r {hw}"><span>{h}</span><b>{sh}</b></div>'
+            f'<div class="sbx-b">{esc(x.get("blurb",""))}</div></div>'
+        )
+    return _panel("Final Scores", f'<div class="sgrid">{"".join(boxes)}</div>', pad=True)
+
+
+def _marquee(items) -> str:
+    if not items:
+        return ""
+    cards = []
+    for x in items[:3]:
+        watch = (f'<div class="mq-watch"><b>Watch For:</b> {esc(x.get("watch_for"))}</div>'
+                 if x.get("watch_for") else "")
+        cards.append(
+            f'<div class="mq-card"><div class="mq-top"><span class="mq-label">{esc(x.get("label","Matchup"))}</span>'
+            f'<span class="mq-venue">{esc(x.get("venue",""))}</span></div>'
+            f'<div class="mq-teams">{esc(x.get("matchup",""))}</div>'
+            f'<div class="mq-write">{esc(x.get("writeup",""))}</div>{watch}</div>'
+        )
+    return _panel("This Week's Marquee Matchups", f'<div class="mgrid">{"".join(cards)}</div>', pad=True)
+
+
+def _overheard(items) -> str:
+    if not items:
+        return ""
+    rows = "".join(
+        f'<div class="oh"><span class="q">“{esc(x.get("quote"))}”</span>'
+        f'<cite>— {esc(x.get("who"))}</cite></div>' for x in items[:5]
+    )
+    return _panel("Overheard in the League", rows)
+
+
+def _commish(text) -> str:
+    if not text:
+        return ""
+    return _panel("Commissioner's Corner", f'<p class="cmq">“{esc(text)}”</p>')
+
+
 def _panel(title, inner, pad=False) -> str:
     body = inner if pad else inner
     return (f'<section class="panel"><div class="shead"><h2>{esc(title)}</h2></div>'
@@ -113,21 +170,28 @@ def _panel(title, inner, pad=False) -> str:
 # ---------------------------------------------------------------- page shell
 def build_html(data: dict) -> str:
     d = data or {}
+    top = "".join(filter(None, [
+        _final_scores(d.get("final_scores", [])),
+        _marquee(d.get("marquee", [])),
+    ]))
+    # Balance the columns: recruiting rides the left so it doesn't leave a void bottom-right.
     left = "".join(filter(None, [
         _power(d.get("power_rankings", [])),
         _notes("Storyline Corner", d.get("storylines", [])),
+        _notes("Recruiting Trail", d.get("recruiting", [])),
         _standings(d.get("standings", [])),
-        _slate(d.get("cpu_slate", [])),
+        _overheard(d.get("overheard", [])),
     ]))
     right = "".join(filter(None, [
         _notes("CFP Contender Watch", d.get("cfp_watch", [])),
         _poll(d.get("top25", [])),
         _heisman(d.get("heisman", [])),
-        _notes("Recruiting Trail", d.get("recruiting", [])),
         _line(d.get("line", [])),
+        _commish(d.get("commissioner", "")),
         _media(d.get("media_quote", "")),
     ]))
     return _SHELL.format(
+        top=top,
         title=esc(d.get("title", "The Dynasty Dispatch")),
         issue=esc(d.get("issue", "Volume 1 · Issue 1")),
         date=esc(d.get("date", "")),
@@ -240,6 +304,26 @@ _SHELL = r"""<title>{title}</title>
     background:linear-gradient(180deg,#f6efdd,#d9b45f 65%,#a9832f); -webkit-background-clip:text; background-clip:text; color:transparent; text-wrap:balance}}
   .banner .dek{{font-family:var(--serif); font-style:italic; text-align:center; color:var(--muted); font-size:15px; max-width:74ch; margin:2px auto 0}}
   .banner .dek b{{color:var(--cream); font-style:normal; font-weight:600}}
+  .fullwide{{display:flex; flex-direction:column; gap:16px; margin-top:14px}}
+  .sgrid{{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}}
+  .sbx{{border:1px solid var(--edge); background:linear-gradient(180deg,#241211,#180d0c); padding:8px 11px}}
+  .sbx-v{{font-family:var(--cond); text-transform:uppercase; letter-spacing:.14em; font-size:10px; color:var(--gold-dim); margin-bottom:4px}}
+  .sbx-r{{display:flex; justify-content:space-between; align-items:baseline; font-family:var(--display); font-style:italic; color:var(--muted); font-size:17px; padding:2px 0}}
+  .sbx-r.win{{color:var(--cream)}}
+  .sbx-r b{{color:var(--gold); font-variant-numeric:tabular-nums; font-family:var(--cond); font-size:18px}}
+  .sbx-b{{font-family:var(--serif); font-style:italic; color:var(--muted); font-size:11.5px; line-height:1.35; margin-top:5px; border-top:1px solid var(--edge-soft); padding-top:5px}}
+  .mgrid{{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}}
+  .mq-card{{border:1px solid var(--edge); background:linear-gradient(180deg,#241211,#160c0b); padding:10px 12px; display:flex; flex-direction:column; gap:6px}}
+  .mq-top{{display:flex; justify-content:space-between; align-items:center; font-family:var(--cond); text-transform:uppercase; font-size:10px; letter-spacing:.14em}}
+  .mq-label{{color:var(--crimson-br)}} .mq-venue{{color:var(--gold-dim)}}
+  .mq-teams{{font-family:var(--display); font-style:italic; color:var(--cream); font-size:20px; text-align:center; line-height:1.05}}
+  .mq-write{{font-family:var(--serif); font-style:italic; color:var(--muted); font-size:12px; line-height:1.4}}
+  .mq-watch{{font-family:var(--cond); color:var(--cream); font-size:12px; border-top:1px solid var(--edge-soft); padding-top:6px}}
+  .mq-watch b{{color:var(--gold); text-transform:uppercase; letter-spacing:.1em; font-size:10px}}
+  .oh{{padding:7px 0; border-bottom:1px solid rgba(230,194,92,.12)}} .oh:last-child{{border-bottom:0}}
+  .oh .q{{font-family:var(--serif); font-style:italic; color:var(--cream); font-size:13.5px; line-height:1.4}}
+  .oh cite{{display:block; font-style:normal; font-family:var(--cond); text-transform:uppercase; letter-spacing:.12em; font-size:10px; color:var(--crimson-br); margin-top:3px}}
+  .cmq{{font-family:var(--serif); font-style:italic; color:var(--cream); font-size:15px; line-height:1.5; margin:0}}
   .cols{{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:14px; align-items:start}}
   .stack{{display:flex; flex-direction:column; gap:16px}}
   .panel{{border:1px solid var(--edge); background:linear-gradient(180deg,var(--panel2),var(--panel)); box-shadow:inset 0 0 0 1px rgba(0,0,0,.4), 0 8px 22px rgba(0,0,0,.35)}}
@@ -289,7 +373,7 @@ _SHELL = r"""<title>{title}</title>
     font-family:var(--display); background:linear-gradient(90deg,var(--oxblood2),var(--oxblood),var(--oxblood2)); border:1px solid var(--edge)}}
   .ribbon span{{color:var(--cream); font-size:19px; transform:scaleY(1.08); display:inline-block}}
   .ribbon span b{{color:var(--gold)}} .ribbon span i{{color:var(--crimson-br); font-style:normal}}
-  @media(max-width:760px){{.cols,.poll,.stand,.slate{{grid-template-columns:1fr}} .crest{{display:none}} .title .wm{{font-size:52px}}}}
+  @media(max-width:760px){{.cols,.poll,.stand,.slate,.sgrid,.mgrid{{grid-template-columns:1fr}} .crest{{display:none}} .title .wm{{font-size:52px}}}}
 </style>
 <div class="wrap">
   <span class="eyebrow">Page Two &nbsp;·&nbsp; <b>The Sports Desk</b> &nbsp;·&nbsp; <b>{eyebrow_week}</b></span>
@@ -308,6 +392,7 @@ _SHELL = r"""<title>{title}</title>
   </header>
   <div class="rule-heavy"></div><div class="rule-thin"></div>
   <section class="banner"><div class="kicker">{kicker}</div><h1>{headline}</h1><p class="dek">{dek}</p></section>
+  <div class="fullwide">{top}</div>
   <div class="cols"><div class="stack">{left}</div><div class="stack">{right}</div></div>
   <div class="ribbon"><span><i>★</i> <b>Build</b> Your Dynasty</span><span><i>★</i> <b>Earn</b> Your Legacy</span><span><i>★</i> <b>Respect</b> the Dispatch</span></div>
 </div>
@@ -333,6 +418,23 @@ if __name__ == "__main__":  # local self-test: fill with sample data, write HTML
         "standings": [{"team": t, "rating": "—", "rec": "0–0"} for t in
                       ["Alabama", "Georgia", "Ohio State", "Oregon", "Michigan", "Texas"]],
         "line": [{"game": "LSU at Ohio State", "loc": "Ohio Stadium", "odds": "OSU −7.5"}],
+        "final_scores": [
+            {"away": "Penn State", "away_score": 28, "home": "Notre Dame", "home_score": 64,
+             "venue": "Notre Dame Stadium", "blurb": "The Irish average 12.5 a snap in a home coronation."},
+            {"away": "Auburn", "away_score": 42, "home": "Pitt", "home_score": 17,
+             "venue": "Acrisure Stadium", "blurb": "Byrum Brown goes for 515 total in his Auburn debut."},
+        ],
+        "marquee": [
+            {"matchup": "Texas at USC", "label": "GAME OF THE WEEK", "venue": "LA Coliseum · Monday",
+             "writeup": "A Monday-night QB duel. Texas has the trench edge.", "watch_for": "Manning vs USC's edge rush"},
+            {"matchup": "Oregon at Alabama", "label": "TOP-FIVE TEST", "venue": "Bryant-Denny · Saturday",
+             "writeup": "The best game on paper. Playoff-seed leverage.", "watch_for": "Moore vs the Tide secondary"},
+        ],
+        "overheard": [
+            {"quote": "Wasn't tryna run up the score, just getting him Heisman stats.", "who": "Austin (Auburn)"},
+            {"quote": "Team ain't ready for them SEC boys.", "who": "Drew (Pitt)"},
+        ],
+        "commissioner": "It's early, but the war has officially begun. Keep building.",
         "media_quote": "Play your games, stream your games, and give us something worth printing.",
     }
     import pathlib

@@ -495,20 +495,24 @@ PAPER_SCHEMA = """{
  "headline": "<4-7 word front-page headline>",
  "kicker": "<3-5 word eyebrow above the headline>",
  "dek": "<1-2 sentence standfirst; may bold **teams** with markdown-style ** **>",
- "results": [{"winner": "<team>", "loser": "<team>"}],
- "power_rankings": [{"team": "<team>", "conf": "<SEC|Big Ten|ACC>", "blurb": "<one witty line>"}],
+ "final_scores": [{"away": "<team>", "away_score": <int>, "home": "<team>", "home_score": <int>, "venue": "<stadium/city>", "blurb": "<one-line recap>"}],
+ "power_rankings": [{"team": "<team>", "conf": "<SEC|Big Ten|ACC|Big 12>", "blurb": "<one witty line>"}],
  "storylines": [{"title": "<label>", "body": "<1-2 sentences>"}],
  "cfp_watch": [{"title": "<label>", "body": "<1-2 sentences>"}],
  "top25": [{"rk": 1, "team": "<team>", "rec": "<from standings or 0-0>"}],
  "heisman": [{"name": "<player>", "tag": "<POS · TEAM>", "note": "<short>"}],
  "recruiting": [{"title": "<label>", "body": "<1-2 sentences>"}],
+ "marquee": [{"matchup": "<Away at Home>", "label": "<GAME OF THE WEEK|TOP-FIVE TEST|RANKED RUMBLE>", "venue": "<stadium · when>", "writeup": "<2 sentences>", "watch_for": "<one key duel>"}],
  "line": [{"game": "<Away at Home>", "loc": "<stadium/city>", "odds": "<TEAM -X.X>"}],
+ "overheard": [{"quote": "<verbatim coach quote>", "who": "<coach or team>"}],
+ "commissioner": "<1-2 sentence editorial note from the commish>",
  "media_quote": "<one editorial sign-off line>"
 }"""
 
 
 async def ai_paper(week_label: str, matchups: list, next_matchups: list, standings_summary: str,
-                   banter: str, images: list, recruit_images: list, heisman_images: list) -> tuple:
+                   banter: str, images: list, recruit_images: list, heisman_images: list,
+                   team_count: int = 20) -> tuple:
     """Build the full newspaper as structured JSON (+ results for standings). (dict|None, results)."""
     global _last_ai_error
     if anthropic is None:
@@ -531,27 +535,31 @@ async def ai_paper(week_label: str, matchups: list, next_matchups: list, standin
     next_slate = "\n".join(f"- {a} at {h}" for h, a in next_matchups) or "(none)"
     content.append({"type": "text", "text": (
         f"You are the editor of THE DYNASTY DISPATCH ({week_label}), a gritty broadsheet for a College "
-        "Football 27 online dynasty (20 user-coached teams across the SEC, Big Ten, and ACC). Produce the "
-        "front page as STRICT JSON matching this schema (no prose, no code fences):\n" + PAPER_SCHEMA +
-        f"\n\nTHIS WEEK's user matchups:\n{this_slate}\n\nNEXT WEEK's user matchups (for The Line):\n{next_slate}"
+        f"Football 27 online dynasty ({team_count} user-coached teams across the SEC, Big Ten, ACC, and Big 12). "
+        "Produce the front page as STRICT JSON matching this schema (no prose, no code fences):\n" + PAPER_SCHEMA +
+        f"\n\nTHIS WEEK's user matchups:\n{this_slate}\n\nNEXT WEEK's user matchups (for marquee + line):\n{next_slate}"
         f"\n\nCurrent standings (authoritative — use verbatim for records):\n{standings_summary or '(0-0 across the board)'}"
-        f"\n\nCoach chat this week (for tone/quotes only):\n{banter[:1500] or '(none)'}\n\n"
+        f"\n\nCoach chat this week (verbatim — mine for overheard quotes):\n{banter[:2000] or '(none)'}\n\n"
         "HARD RULES:\n"
-        "• NEVER invent a final score, a win/loss record, a stat, a commit, or a Heisman name. Results come "
-        "ONLY from the box-score photos; records come ONLY from the standings above; recruiting and heisman "
-        "come ONLY from those screenshots. If a source isn't provided, return an EMPTY list for that section.\n"
-        "• 'results' = only games you can actually read a final score for in the photos (winner/loser by exact "
-        "team name). Empty list if none.\n"
-        "• power_rankings, cfp_watch, storylines, top25 order, and line are EDITORIAL opinion/prediction — allowed, "
-        "but they must not state any fabricated final score or record. Rank the 20 user teams; 8-10 power_rankings, "
-        "up to 25 top25 (fill 'rec' from standings, else 0-0).\n"
-        "• 'line' previews NEXT WEEK's games only, from the slate above.\n"
+        "• NEVER invent a final score, a win/loss record, a stat, a commit, or a Heisman name. Final scores come "
+        "ONLY from the box-score photos; records come ONLY from the standings above; recruiting and heisman come "
+        "ONLY from those screenshots; overheard quotes come ONLY verbatim from the chat above. If a source isn't "
+        "provided, return an EMPTY list/string for that section — do not fabricate.\n"
+        "• 'final_scores' = only games you can actually read a final score for in the photos (exact team names + "
+        "the real integer scores). Empty list if none. Standings are derived from these winners.\n"
+        f"• power_rankings, cfp_watch, storylines, top25 order, marquee, line, commissioner are EDITORIAL "
+        "opinion/prediction — allowed, but must not state a fabricated final score or record. Rank the "
+        f"{team_count} user teams; 8-10 power_rankings, up to 25 top25 (fill 'rec' from standings, else 0-0).\n"
+        "• 'marquee' = the 2-3 biggest NEXT-WEEK user games (preview + a 'watch for' duel). 'line' previews "
+        "NEXT WEEK's games from the slate above.\n"
+        "• 'overheard' = 2-5 of the punchiest real chat quotes, attributed; skip anything genuinely nasty. "
+        "Empty if nothing good.\n"
         "• Keep every blurb tight. Output ONLY the JSON object."
     )})
     try:
         client = anthropic.AsyncAnthropic()
         msg = await client.messages.create(
-            model=RECAP_MODEL, max_tokens=6000, messages=[{"role": "user", "content": content}]
+            model=RECAP_MODEL, max_tokens=8000, messages=[{"role": "user", "content": content}]
         )
         if msg.stop_reason == "refusal":
             _last_ai_error = "model refused"
@@ -562,8 +570,16 @@ async def ai_paper(week_label: str, matchups: list, next_matchups: list, standin
             _last_ai_error = "no JSON in paper response"
             return None, []
         data = json.loads(m.group(0))
+        # Standings come from the real final scores (winner = higher score).
+        results = []
+        for fs in (data.get("final_scores") or []):
+            a, h = fs.get("away"), fs.get("home")
+            asc, hsc = fs.get("away_score"), fs.get("home_score")
+            if a and h and isinstance(asc, (int, float)) and isinstance(hsc, (int, float)) and asc != hsc:
+                w, l = (a, h) if asc > hsc else (h, a)
+                results.append({"winner": w, "loser": l})
         _last_ai_error = ""
-        return data, data.get("results", []) or []
+        return data, results
     except Exception as exc:
         _last_ai_error = f"paper API error: {type(exc).__name__}: {exc}"
         print(f"AI paper failed: {exc}")
@@ -1085,7 +1101,8 @@ def main() -> None:
         tl = user_team_list()
         summary = "\n".join(f"{t}: {standings.record_str(t) or '0-0'}" for t in tl)
         wl = f"Week {week}" if str(week).strip() not in ("", "Preseason") else "Preseason"
-        data, results = await ai_paper(wl, this_games, next_games, summary, banter, images, recruit, heis)
+        data, results = await ai_paper(wl, this_games, next_games, summary, banter, images, recruit, heis,
+                                       team_count=len(tl))
         if not data:
             return None, None, results
         if results and str(week).strip() not in ("", "Preseason"):
