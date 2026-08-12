@@ -99,5 +99,13 @@
   "Nebraska": {
     "primary": "#E41C38",
     "secondary": "#F5F1E7"
+  },
+  "Baylor": {
+    "primary": "#154734",
+    "secondary": "#FFB81C"
+  },
+  "NC State": {
+    "primary": "#CC0000",
+    "secondary": "#000000"
   }
 }

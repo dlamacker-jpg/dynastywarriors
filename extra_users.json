@@ -1,4 +1,7 @@
 {
   "_comment": "User-coached teams that have NO user-vs-user games (all-CPU schedules), so they don't appear in schedule.json but should still be listed in the newspaper standings/roster.",
-  "teams": ["Texas Tech"]
+  "teams": [
+    "Baylor",
+    "Texas Tech"
+  ]
 }

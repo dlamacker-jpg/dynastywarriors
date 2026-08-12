@@ -1,5 +1,5 @@
 {
-  "_comment": "Season schedule of USER-vs-USER games, keyed by week (string). Each game is [home, away]. FSU left (coach->Texas Tech). Tennessee & UCLA added as user teams; their former-CPU games vs existing coaches are now user games. Texas Tech schedule still needed.",
+  "_comment": "Season schedule of USER-vs-USER games, keyed by week (string). Each game is [home, away]. FSU re-claimed (5 games back). NC State added (converts Duke's CPU game, Wk10). Baylor & Texas Tech are all-CPU user teams (see extra_users.json).",
   "0": [
     [
       "Texas A&M",
@@ -8,6 +8,10 @@
     [
       "Michigan",
       "Florida"
+    ],
+    [
+      "Florida State",
+      "Oklahoma"
     ]
   ],
   "1": [
@@ -82,6 +86,10 @@
     [
       "Ohio State",
       "Alabama"
+    ],
+    [
+      "Texas",
+      "Florida State"
     ]
   ],
   "4": [
@@ -186,6 +194,10 @@
     [
       "Oregon",
       "Nebraska"
+    ],
+    [
+      "Miami",
+      "Florida State"
     ]
   ],
   "8": [
@@ -222,6 +234,10 @@
     [
       "Florida",
       "Georgia"
+    ],
+    [
+      "Florida State",
+      "Clemson"
     ]
   ],
   "10": [
@@ -248,6 +264,10 @@
     [
       "Alabama",
       "LSU"
+    ],
+    [
+      "NC State",
+      "Duke"
     ]
   ],
   "11": [
@@ -318,6 +338,10 @@
     [
       "Iowa",
       "Nebraska"
+    ],
+    [
+      "Florida State",
+      "Florida"
     ]
   ]
 }
