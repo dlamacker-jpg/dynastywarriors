@@ -78,6 +78,7 @@ NEWS_CHANNEL = "league-news"                 # where the weekly recap ("newspape
 SCORES_CHANNEL = "score-reporting"           # read for results to build the recap
 RECRUITING_CHANNEL = "recruiting"            # read for recruiting screenshots (commits, portal, rankings)
 HEISMAN_CHANNEL = "heisman"                   # read for Heisman-race / stat-leader screenshots
+TOP25_CHANNEL = "top-25"                      # read for the current-week Top 25 poll screenshot
 TRASH_CHANNELS = ("general", "user-game-coordination")  # scanned for quotable trash talk
 COMMISH_ROLES = ("Commissioner", "Co-Commissioner")  # who may run !advance
 QUIET_MODE = False  # LIVE: matchups, active checks, league-news @everyone, and game rooms all ping.
@@ -513,7 +514,7 @@ PAPER_SCHEMA = """{
 
 async def ai_paper(week_label: str, matchups: list, next_matchups: list, standings_summary: str,
                    banter: str, images: list, recruit_images: list, heisman_images: list,
-                   team_count: int = 20) -> tuple:
+                   top25_images: list | None = None, team_count: int = 20) -> tuple:
     """Build the full newspaper as structured JSON (+ results for standings). (dict|None, results)."""
     global _last_ai_error
     if anthropic is None:
@@ -532,6 +533,10 @@ async def ai_paper(week_label: str, matchups: list, next_matchups: list, standin
     if heisman_images:
         content.append({"type": "text", "text": "=== HEISMAN / STAT SCREENSHOTS ==="})
         content += [_img_block(mt, d) for mt, d in heisman_images]
+    top25_images = top25_images or []
+    if top25_images:
+        content.append({"type": "text", "text": "=== TOP 25 POLL SCREENSHOTS (official in-game poll) ==="})
+        content += [_img_block(mt, d) for mt, d in top25_images]
     this_slate = "\n".join(f"- {a} at {h}" for h, a in matchups) or "(none)"
     next_slate = "\n".join(f"- {a} at {h}" for h, a in next_matchups) or "(none)"
     content.append({"type": "text", "text": (
@@ -551,9 +556,12 @@ async def ai_paper(week_label: str, matchups: list, next_matchups: list, standin
         "• 'scoreboard' = the single biggest user game for which you can read a real QUARTER-BY-QUARTER line off a "
         "box score (per-quarter points + total for each team). Use it as the hero. If no box score shows a "
         "readable quarter line, set scoreboard to null — NEVER invent quarter splits.\n"
-        f"• power_rankings, cfp_watch, storylines, top25 order, marquee, line, commissioner are EDITORIAL "
-        "opinion/prediction — allowed, but must not state a fabricated final score or record. Rank the "
-        f"{team_count} user teams; 8-10 power_rankings, up to 25 top25 (fill 'rec' from standings, else 0-0).\n"
+        f"• power_rankings, cfp_watch, storylines, marquee, line, commissioner are EDITORIAL opinion/prediction "
+        "— allowed, but must not state a fabricated final score or record. Rank the "
+        f"{team_count} user teams; 8-10 power_rankings.\n"
+        "• 'top25' — if a TOP 25 POLL screenshot is provided, read the ranking order and records VERBATIM from it "
+        "(this is the official poll, not opinion). Only if NO Top 25 screenshot is provided may you rank the top "
+        "25 editorially, filling 'rec' from the standings above (else 0-0).\n"
         "• 'marquee' = the 2-3 biggest NEXT-WEEK user games (preview + a 'watch for' duel). 'line' previews "
         "NEXT WEEK's games from the slate above.\n"
         "• 'overheard' = 2-5 of the punchiest real chat quotes, attributed; skip anything genuinely nasty. "
@@ -1087,6 +1095,7 @@ def main() -> None:
         images = await imgs(SCORES_CHANNEL, 16, since is not None)
         recruit = await imgs(RECRUITING_CHANNEL, 12, False)
         heis = await imgs(HEISMAN_CHANNEL, 8, False)
+        top25 = await imgs(TOP25_CHANNEL, 4, False)
         lines = []
         for cname in TRASH_CHANNELS:
             ch = discord.utils.get(guild.text_channels, name=cname)
@@ -1098,7 +1107,7 @@ def main() -> None:
                 txt = " ".join(m.content.split())
                 if 3 <= len(txt) <= 300:
                     lines.append(f"{m.author.display_name}: {txt}")
-        return images, recruit, heis, "\n".join(lines[-120:])
+        return images, recruit, heis, top25, "\n".join(lines[-120:])
 
     async def build_dispatch_image(guild: discord.Guild, week, this_games, next_games, since):
         """Render the full broadcast newspaper PNG. Returns (png|None, data|None, results)."""
@@ -1106,12 +1115,12 @@ def main() -> None:
         if dispatch_render is None:
             _last_ai_error = "dispatch_render module failed to import on the host"
             return None, None, []
-        images, recruit, heis, banter = await gather_media(guild, since)
+        images, recruit, heis, top25, banter = await gather_media(guild, since)
         tl = user_team_list()
         summary = "\n".join(f"{t}: {standings.record_str(t) or '0-0'}" for t in tl)
         wl = f"Week {week}" if str(week).strip() not in ("", "Preseason") else "Preseason"
         data, results = await ai_paper(wl, this_games, next_games, summary, banter, images, recruit, heis,
-                                       team_count=len(tl))
+                                       top25, team_count=len(tl))
         if not data:
             return None, None, results
         if results and str(week).strip() not in ("", "Preseason"):

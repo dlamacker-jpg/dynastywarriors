@@ -37,6 +37,7 @@
         { "name": "conference-realignment", "type": "text", "topic": "Realignment talk and moves." },
         { "name": "recruiting",             "type": "text", "topic": "Recruiting, commits, and the transfer portal." },
         { "name": "heisman",                "type": "text", "topic": "Heisman watch — post stat-leader / Heisman-race screenshots for the weekly paper." },
+        { "name": "top-25",                 "type": "text", "topic": "Post the current week's Top 25 poll screenshot — the Dispatch reads it into the paper." },
         { "name": "later-losers",           "type": "text", "topic": "Coaches who left the dynasty. Press F. 🪦" }
       ]
     }
