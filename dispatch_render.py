@@ -157,7 +157,8 @@ async def _render_via_api(html_str: str, width: int) -> bytes | None:
     try:
         import aiohttp
         auth = aiohttp.BasicAuth(uid, key)
-        payload = {"html": html_str, "device_scale": 2, "viewport_width": width + 40, "selector": ".wrap",
+        payload = {"html": html_str, "device_scale": 2,
+                   "viewport_width": width + 40, "viewport_height": 2200, "selector": ".wrap",
                    "google_fonts": "Anton|Oswald|Kaushan Script|Playfair Display", "ms_delay": 500}
         async with aiohttp.ClientSession() as s:
             async with s.post("https://hcti.io/v1/image", data=payload, auth=auth) as r:
