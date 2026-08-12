@@ -1168,8 +1168,6 @@ def main() -> None:
             png, data, _ = await build_dispatch_image(guild, last_week, last_games, next_games, last_time)
             if png:
                 await news_ch.send(file=discord.File(io.BytesIO(png), filename=f"dispatch-week-{last_week}.png"))
-                if data:  # short accessible text companion, built from the same data (no extra AI call)
-                    await send_paper(news_ch, data_to_text(data, f"Week {last_week}"))
             else:
                 # Fallback: text recap + Game-of-the-Week card.
                 paper, results = await build_newspaper(guild, last_week, last_time, next_week, next_games)
