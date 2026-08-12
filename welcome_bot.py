@@ -1047,30 +1047,33 @@ def main() -> None:
             out = []
             if ch is None:
                 return out
-            it = ch.history(limit=300, after=since) if use_since else ch.history(limit=200)
-            async for m in it:
+            # Scan deep so recent posts buried under chatter still get picked up; keep the newest `cap`.
+            it = ch.history(limit=600, after=since) if use_since else ch.history(limit=600)
+            async for m in it:  # history() yields newest-first when no `after`
                 for att in m.attachments:
-                    if _is_image(att) and len(out) < cap:
+                    if _is_image(att):
                         try:
                             out.append((_img_media_type(att), await att.read()))
                         except Exception:
                             pass
-            return out
-        images = await imgs(SCORES_CHANNEL, 12, since is not None)
-        recruit = await imgs(RECRUITING_CHANNEL, 8, False)
-        heis = await imgs(HEISMAN_CHANNEL, 6, False)
+                if len(out) >= cap:
+                    return out[:cap]
+            return out[:cap]
+        images = await imgs(SCORES_CHANNEL, 16, since is not None)
+        recruit = await imgs(RECRUITING_CHANNEL, 12, False)
+        heis = await imgs(HEISMAN_CHANNEL, 8, False)
         lines = []
         for cname in TRASH_CHANNELS:
             ch = discord.utils.get(guild.text_channels, name=cname)
             if ch is None:
                 continue
-            async for m in ch.history(limit=200, after=since):
+            async for m in ch.history(limit=400, after=since):
                 if m.author.bot:
                     continue
                 txt = " ".join(m.content.split())
                 if 3 <= len(txt) <= 300:
                     lines.append(f"{m.author.display_name}: {txt}")
-        return images, recruit, heis, "\n".join(lines[-80:])
+        return images, recruit, heis, "\n".join(lines[-120:])
 
     async def build_dispatch_image(guild: discord.Guild, week, this_games, next_games, since):
         """Render the full broadcast newspaper PNG. Returns (png|None, data|None, results)."""
