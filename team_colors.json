@@ -107,5 +107,9 @@
   "NC State": {
     "primary": "#CC0000",
     "secondary": "#000000"
+  },
+  "Pittsburgh": {
+    "primary": "#003594",
+    "secondary": "#FFB81C"
   }
 }

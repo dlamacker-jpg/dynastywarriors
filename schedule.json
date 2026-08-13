@@ -1,5 +1,5 @@
 {
-  "_comment": "Season schedule of USER-vs-USER games, keyed by week (string). Each game is [home, away]. FSU re-claimed (5 games back). NC State added (converts Duke's CPU game, Wk10). Baylor & Texas Tech are all-CPU user teams (see extra_users.json).",
+  "_comment": "Season schedule of USER-vs-USER games, keyed by week (string). Each game is [home, away]. Pittsburgh added (converts Miami's CPU game, Wk8). NC State: Duke Wk10. Baylor & Texas Tech all-CPU (extra_users).",
   "0": [
     [
       "Texas A&M",
@@ -224,6 +224,10 @@
     [
       "Nebraska",
       "LSU"
+    ],
+    [
+      "Miami",
+      "Pittsburgh"
     ]
   ],
   "9": [
