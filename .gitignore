@@ -17,3 +17,6 @@ __pycache__/
 standings.json
 sample_card.png
 dispatch_out.html
+
+# Claude Code local settings
+.claude/
