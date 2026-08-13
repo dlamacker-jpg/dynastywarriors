@@ -65,6 +65,7 @@ WELCOME_CHANNEL = "newbies"
 ROLE_ON_JOIN = "Coach"           # set to None to disable auto-role; also the role counted on the boards
 TAKEN_CHANNEL = "team-assignments"
 AVAILABLE_CHANNEL = "teams-available"
+PSN_CHANNEL = "psns-gamertags"   # bot-maintained gamertag board; coaches reply here with their tag
 LOSERS_CHANNEL = "later-losers"
 ACTIVE_CHECK_CHANNEL = "active-checks"    # where the active check is posted
 ACTIVE_CHECK_DAYS = 3                     # how often it goes out
@@ -86,6 +87,7 @@ TEAMS_FILE = Path(__file__).with_name("teams_fbs.json")
 RESERVED_FILE = Path(__file__).with_name("reserved.json")
 ALIASES_FILE = Path(__file__).with_name("aliases.json")
 SCHEDULE_FILE = Path(__file__).with_name("schedule.json")
+GAMERTAGS_FILE = Path(__file__).with_name("gamertags.json")
 
 # Common shorthand -> official name (both get normalized before comparing).
 ALIASES = {
@@ -183,6 +185,15 @@ def load_aliases() -> dict[str, str]:
             continue
         out[base_norm(alias)] = official
     return out
+
+
+def load_gamertags() -> dict[str, str]:
+    """Seed {school: PSN/gamertag}, verified from the in-game Members list. Missing file = none."""
+    if not GAMERTAGS_FILE.exists():
+        return {}
+    with GAMERTAGS_FILE.open(encoding="utf-8") as f:
+        data = json.load(f)
+    return {k: v for k, v in data.items() if not str(k).startswith("_")}
 
 
 def pack(items: list[str], limit: int = 1900) -> list[str]:
@@ -618,6 +629,13 @@ def main() -> None:
     team_by_norm = {base_norm(t): t for teams in conferences.values() for t in teams}
     team_conf = {base_norm(t): conf for conf, teams in conferences.items() for t in teams}
 
+    # PSN/gamertag roster. tag_by_team is the git-committed seed (norm school -> tag);
+    # tag_by_user is what coaches submit at runtime (user id -> tag) and wins on display.
+    # Runtime tags are recovered from the #psns-gamertags board on boot (rebuild_tags),
+    # so a Railway redeploy loses nothing.
+    tag_by_team = {normalize(k): v for k, v in load_gamertags().items()}
+    tag_by_user: dict[int, str] = {}
+
     # For the substring fallback: map every team-norm and alias key to its team-norm,
     # keeping only keys >= 5 chars (shorter ones like "usc"/"cal" would false-match inside
     # unrelated names). Sorted longest-first so the longest match wins.
@@ -721,13 +739,22 @@ def main() -> None:
         conflicts.sort(key=lambda c: c[0].lower())
         return taken, conflicts, unset, set(holders.keys())
 
+    MENTION_RE = re.compile(r"<@!?(\d+)>")
+
+    def tag_for(team: str, owner: str) -> str | None:
+        """Best-known gamertag for a taken team: the coach's own submission wins over the seed."""
+        m = MENTION_RE.search(owner)
+        if m and int(m.group(1)) in tag_by_user:
+            return tag_by_user[int(m.group(1))]
+        return tag_by_team.get(normalize(team))
+
     def build_taken_blocks(guild: discord.Guild) -> list[str]:
         taken, conflicts, unset, _ = gather_teams(guild)
 
         items = [
             "# 🏈 Teams Taken — Dynasty Warriors\n"
             "*Auto-updates as coaches set their nickname to their school (rule #9). "
-            "Open schools are in #teams-available.*\n\n"
+            "Open schools are in #teams-available. 🎮 = PSN/gamertag (full list in #psns-gamertags).*\n\n"
             f"**Taken ({len(taken) + len(conflicts)}):**"
         ]
         if taken:
@@ -737,7 +764,11 @@ def main() -> None:
             for conf in list(conferences) + ["Other"]:
                 if conf in by_conf:
                     entries = sorted(by_conf[conf], key=lambda t: t[0].lower())
-                    body = "\n".join(f"• **{team}** — {owner}" for team, owner in entries)
+                    body = "\n".join(
+                        f"• **{team}** — {owner}"
+                        + (f" — 🎮 `{tag}`" if (tag := tag_for(team, owner)) else "")
+                        for team, owner in entries
+                    )
                     items.append(f"## {conf} ({len(entries)})\n{body}")
         elif not conflicts:
             items.append("*None yet.*")
@@ -768,9 +799,109 @@ def main() -> None:
         )
         return pack([header] + sections)
 
-    async def sync_channel(channel: discord.TextChannel, blocks: list[str]) -> None:
+    # ---- PSN / gamertag board (#psns-gamertags) ------------------------------
+    # The board is bot-maintained like the team boards. Prompt messages ("reply with
+    # your tag") also live in this channel, so board messages carry an invisible
+    # marker and only marked (or legacy roster-shaped) messages are managed/replaced.
+    BOARD_MARK = "\u200b"  # zero-width space — invisible in Discord marks bot board messages
+    BOARD_LINE_RE = re.compile(r"•\s+\*\*(.+?)\*\*\s+—\s+(?:<@!?(\d+)>)?[^`\n]*`([^`]+)`")
+
+    def is_psn_board_msg(msg: discord.Message) -> bool:
+        return msg.content.startswith((BOARD_MARK, "# 🎮", "## ", "• ", "**In the dynasty"))
+
+    def build_psn_blocks(guild: discord.Guild) -> list[str]:
+        taken, conflicts, unset, taken_norm = gather_teams(guild)
+        items = [
+            BOARD_MARK
+            + "# 🎮 PSNs & Gamertags — Dynasty Warriors\n"
+            "*Who you're actually playing when the invite comes through. Add your opponent "
+            "before your user game so scheduling is painless.\n"
+            "Claimed a team but not listed (or tag wrong)? Reply here with your PSN/gamertag "
+            "(e.g. `psn: YourTag123`).*"
+        ]
+        entries_all = taken + [(team, ", ".join(owners)) for team, owners in conflicts]
+        by_conf: dict[str, list[tuple[str, str]]] = {}
+        for team, owner in entries_all:
+            by_conf.setdefault(team_conf.get(base_norm(team), "Other"), []).append((team, owner))
+        for conf in list(conferences) + ["Other"]:
+            if conf in by_conf:
+                entries = sorted(by_conf[conf], key=lambda t: t[0].lower())
+                lines = []
+                for team, owner in entries:
+                    tag = tag_for(team, owner)
+                    lines.append(
+                        f"• **{team}** — {owner} — `{tag}`" if tag
+                        else f"• **{team}** — {owner} — *no tag yet — reply here!*"
+                    )
+                items.append(BOARD_MARK + f"## {conf} ({len(entries)})\n" + "\n".join(lines))
+        strays = [
+            (team_by_norm[tn], tag) for tn, tag in sorted(tag_by_team.items())
+            if tn in team_by_norm and tn not in taken_norm
+        ]
+        if strays:
+            body = "\n".join(f"• **{team}** — `{tag}`" for team, tag in strays)
+            items.append(BOARD_MARK + f"**In the dynasty, not claimed in Discord yet ({len(strays)}):**\n{body}")
+        return pack(items)
+
+    TAG_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_ .\-]{1,31}$")
+    TAG_PREFIX_RE = re.compile(r"(?i)^(?:psn|gamertag|gamer\s*tag|tag|gt)\s*[:=]?\s+(.+)$")
+
+    async def capture_gamertag(message: discord.Message) -> None:
+        """A plain reply in #psns-gamertags sets the author's gamertag.
+
+        First tag is accepted bare ("MyTag123"); changing an existing tag requires the
+        explicit form ("psn: MyNewTag") so ordinary chatter can't overwrite a good tag.
+        """
+        member = message.author
+        tn = resolve_team(member.display_name)
+        if tn is None:
+            return  # no claimed team — nothing to attach a tag to
+        content = message.content.strip().strip("`").strip()
+        m = TAG_PREFIX_RE.match(content)
+        if m:
+            content = m.group(1).strip().strip("`").strip()
+        elif member.id in tag_by_user or tn in tag_by_team:
+            return  # already has a tag — only the explicit "psn: ..." form may change it
+        if MENTION_RE.search(message.content) or not TAG_RE.match(content):
+            return  # links, typed @mentions, multi-line, or too long — not a tag
+        tag_by_user[member.id] = content
+        try:
+            await message.add_reaction("✅")
+        except discord.HTTPException:
+            pass
+        # Clear any outstanding "reply with your tag" prompt aimed at them, then refresh.
+        async for msg in message.channel.history(limit=50):
+            if (msg.author.id == client.user.id and not is_psn_board_msg(msg)
+                    and member in msg.mentions):
+                try:
+                    await msg.delete()
+                except discord.HTTPException:
+                    pass
+        await refresh_all(message.guild)
+        print(f"Gamertag set: {member} ({team_by_norm.get(tn, tn)}) -> {content}")
+
+    async def rebuild_tags(guild: discord.Guild) -> None:
+        """Recover runtime-submitted tags from the existing board, so a redeploy loses nothing."""
+        channel = discord.utils.get(guild.text_channels, name=PSN_CHANNEL)
+        if channel is None:
+            return
+        async for msg in channel.history(limit=100):
+            if msg.author.id != client.user.id:
+                continue
+            for team, mention_id, tag in BOARD_LINE_RE.findall(msg.content):
+                tag = tag.strip()
+                if not tag:
+                    continue
+                if mention_id:
+                    tag_by_user.setdefault(int(mention_id), tag)
+                tn = normalize(team)
+                if tn in team_by_norm:
+                    tag_by_team.setdefault(tn, tag)  # the gamertags.json seed still wins
+
+    async def sync_channel(channel: discord.TextChannel, blocks: list[str], manage=None) -> None:
         no_pings = discord.AllowedMentions.none()
-        existing = [m async for m in channel.history(limit=100) if m.author.id == client.user.id]
+        existing = [m async for m in channel.history(limit=100)
+                    if m.author.id == client.user.id and (manage is None or manage(m))]
         existing.reverse()  # oldest first, to match block order
         for i, content in enumerate(blocks):
             if i < len(existing):
@@ -785,10 +916,13 @@ def main() -> None:
         async with roster_lock:
             taken_ch = discord.utils.get(guild.text_channels, name=TAKEN_CHANNEL)
             avail_ch = discord.utils.get(guild.text_channels, name=AVAILABLE_CHANNEL)
+            psn_ch = discord.utils.get(guild.text_channels, name=PSN_CHANNEL)
             if taken_ch is not None:
                 await sync_channel(taken_ch, build_taken_blocks(guild))
             if avail_ch is not None:
                 await sync_channel(avail_ch, build_available_blocks(guild))
+            if psn_ch is not None:
+                await sync_channel(psn_ch, build_psn_blocks(guild), manage=is_psn_board_msg)
 
     def team_tag(guild: discord.Guild, team: str) -> str:
         """Display for a team in a matchup: coach @mention, else reserved owner, else bold name."""
@@ -1291,6 +1425,7 @@ def main() -> None:
     async def on_ready() -> None:
         print(f"Bot online as {client.user}. Greeting members and tracking teams...")
         for guild in client.guilds:
+            await rebuild_tags(guild)   # recover submitted gamertags from the board
             await refresh_all(guild)
         if not active_check_loop.is_running():
             active_check_loop.start()
@@ -1347,6 +1482,22 @@ def main() -> None:
                         )
                     except discord.Forbidden:
                         pass  # their DMs are closed; the board still flags the conflict
+                elif after.id not in tag_by_user and tn_new not in tag_by_team:
+                    # Fresh claim with no gamertag on file — ask for it in #psns-gamertags.
+                    psn_ch = discord.utils.get(after.guild.text_channels, name=PSN_CHANNEL)
+                    if psn_ch is not None and not QUIET_MODE:
+                        already_asked = False
+                        async for msg in psn_ch.history(limit=50):
+                            if (msg.author.id == client.user.id and not is_psn_board_msg(msg)
+                                    and after in msg.mentions):
+                                already_asked = True
+                                break
+                        if not already_asked:
+                            await psn_ch.send(
+                                f"🎮 {after.mention} — **{team_by_norm[tn_new]}** is yours! "
+                                "Reply right here with your **PSN / gamertag** so opponents "
+                                "can add you before your user games."
+                            )
 
         await refresh_all(after.guild)
 
@@ -1377,6 +1528,9 @@ def main() -> None:
     @client.event
     async def on_message(message: discord.Message) -> None:
         if message.author.bot or message.guild is None:
+            return
+        if message.channel.name == PSN_CHANNEL:
+            await capture_gamertag(message)
             return
         cmd = message.content.strip().lower()
         if cmd not in ("!advance", "!preseason"):
