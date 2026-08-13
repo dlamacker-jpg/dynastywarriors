@@ -28,13 +28,13 @@ RULES = [
         "**It's just a game. Play hard. Have fun.**\n"
         "*User vs user dynasty league where legends are made.*\n\n"
         "**League Settings**\n"
-        "❄️ 2 Play Cool Down  •  ⏱️ 6 Min Qtrs  •  🔁 48 Hour Force Advance  •  🎮 Play CPU Games  •  📋 Custom Playbooks Allowed\n\n"
+        "❄️ 2 Play Cool Down  •  ⏱️ 6 Min Qtrs  •  🔁 24–48 Hour Sims  •  🎮 Play CPU Games  •  📋 Custom Playbooks Allowed\n\n"
         "## 📜 League Rules\n"
         "1. It's just a game\n"
         "2. Heisman difficulty\n"
         "3. 2 play cool down\n"
         "4. 6 min quarters\n"
-        "5. 48 hour force advance\n"
+        "5. 24–48 hour sims — sooner if the user games get played\n"
         "6. Will get kicked if not active — *unless on AUTO*\n"
         "7. Play CPU games!\n"
         "8. Conferences change every 2 years\n"
@@ -73,8 +73,7 @@ RULES = [
         "## 🗓️ Scheduling Rules\n"
         "• Both of y'all need to make an effort to schedule — FW determined by the commissioners\n"
         "• You must @ your opponent or you don't get credit for reaching out\n"
-        "• If both attempted to schedule but it never happened, the game will be fair-simmed\n"
-        "• **Sim will be 8:00–9:30 PM EST**"
+        "• If both attempted to schedule but it never happened, the game will be fair-simmed"
     ),
     (
         "## 🔄 Position Change Rules\n\n"
@@ -120,18 +119,23 @@ def main() -> None:
                 print(f"No #{TARGET_CHANNEL} channel found. Run setup_server.py first.")
                 return
 
-            already = False
-            async for msg in channel.history(limit=50):
-                if msg.author.id == client.user.id:
-                    already = True
-                    break
-            if already and not force:
-                print(f"#{TARGET_CHANNEL} already has rules posted. Re-run with --force to repost.")
+            existing = [m async for m in channel.history(limit=50) if m.author.id == client.user.id]
+            if existing and not force:
+                print(f"#{TARGET_CHANNEL} already has rules posted. Re-run with --force to update them in place.")
                 return
 
-            for block in RULES:
-                await channel.send(block)
-            print(f"Posted {len(RULES)} rules messages to #{TARGET_CHANNEL}.")
+            # Sync in place: edit the bot's existing messages to match, add/delete as needed —
+            # reposting after an edit updates #rules without duplicating the whole wall.
+            existing.reverse()  # oldest first, to match block order
+            for i, content in enumerate(RULES):
+                if i < len(existing):
+                    if existing[i].content != content:
+                        await existing[i].edit(content=content)
+                else:
+                    await channel.send(content)
+            for extra in existing[len(RULES):]:
+                await extra.delete()
+            print(f"Synced {len(RULES)} rules messages to #{TARGET_CHANNEL}.")
         finally:
             await client.close()
 

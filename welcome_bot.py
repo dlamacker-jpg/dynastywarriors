@@ -31,6 +31,7 @@ import random
 import re
 import sys
 import unicodedata
+from datetime import timedelta
 from pathlib import Path
 
 import discord
@@ -72,6 +73,8 @@ ACTIVE_CHECK_DAYS = 3                     # how often it goes out
 ACTIVE_CHECK_EMOJI = "👍"                  # reaction coaches use to confirm
 ACTIVE_CHECK_MARKER = "🚨 ACTIVE CHECK"    # used to find the previous check
 MATCHUPS_CHANNEL = "user-game-coordination"  # where weekly user games are posted
+ANNOUNCEMENTS_CHANNEL = "announcements"      # "next advance" schedule posts land here after each advance
+ADVANCE_WINDOW_HOURS = (36, 48)              # announced sim window — play early and it happens sooner
 GAME_ROOMS_CATEGORY = "This Week's Games"     # temp per-matchup channels live here; cleared each advance
 ADVANCE_HOURS = 48                           # post the next week every 48h (the force-advance cadence)
 MATCHUPS_MARKER = "🏈 Week"                    # used to find the last posted week
@@ -1322,6 +1325,29 @@ def main() -> None:
         reason = _last_ai_error or "no material"
         return f"preseason posted (text fallback — newspaper render didn't run: {reason})"
 
+    async def announce_next_advance(guild: discord.Guild, week) -> None:
+        """Post the next-advance window to #announcements.
+
+        Uses Discord dynamic timestamps (<t:unix:F>) so every coach sees the window
+        in their own timezone. The window is a ceiling — the pitch is to play early
+        so the league sims sooner.
+        """
+        ch = discord.utils.get(guild.text_channels, name=ANNOUNCEMENTS_CHANNEL)
+        if ch is None:
+            return
+        lo_h, hi_h = ADVANCE_WINDOW_HOURS
+        now = discord.utils.utcnow()
+        lo = int((now + timedelta(hours=lo_h)).timestamp())
+        hi = int((now + timedelta(hours=hi_h)).timestamp())
+        await ch.send(
+            f"# 📅 Week {week} is LIVE\n"
+            f"**Next advance:** between <t:{lo}:F> and <t:{hi}:F> — <t:{lo}:R> at the earliest.\n\n"
+            f"🎮 **Play your user game early!** The moment every Week {week} user game is in the "
+            "books, we sim ahead of schedule — don't be the reason the league waits. Lock in a "
+            f"time with your opponent in #{MATCHUPS_CHANNEL} now.",
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
     async def do_advance(guild: discord.Guild, force: bool) -> str:
         """Post last week's recap (from scores) + the next week's matchups. Returns a status line."""
         uch = discord.utils.get(guild.text_channels, name=MATCHUPS_CHANNEL)
@@ -1344,6 +1370,7 @@ def main() -> None:
             await post_week(guild, uch, weeks[0], schedule[str(weeks[0])])
             await clear_game_rooms(guild)
             await create_game_rooms(guild, weeks[0], schedule[str(weeks[0])])
+            await announce_next_advance(guild, weeks[0])
             return f"kicked off — posted Week {weeks[0]}"
         if not force and last_time and (discord.utils.utcnow() - last_time).total_seconds() < ADVANCE_HOURS * 3600:
             return "too soon since the last advance"
@@ -1381,6 +1408,7 @@ def main() -> None:
             return f"posted Week {last_week} recap — season complete, no more weeks"
         await post_week(guild, uch, upcoming[0], schedule[str(upcoming[0])])
         await create_game_rooms(guild, upcoming[0], schedule[str(upcoming[0])])
+        await announce_next_advance(guild, upcoming[0])
         return f"Week {last_week} recap posted + Week {upcoming[0]} matchups are up"
 
     @tasks.loop(hours=3)
